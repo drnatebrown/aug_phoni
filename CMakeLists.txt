@@ -18,6 +18,14 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
 endif()
 
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    message(STATUS "Disabling optimizations.")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g3")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ggdb")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -gstabs")
+endif()
+
 # About this project
 # ------------------------------------------------------------------------------
 project(moni)

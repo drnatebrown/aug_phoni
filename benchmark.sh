@@ -1,4 +1,4 @@
-#!/usr/bin/env zsh
+#!/usr/bin/env bash
 # Evaluation script
 # Computes an output that is parsable with sqlplot (https://github.com/koeppl/sqlplot)
 # Either hardcode PATTERN_FILE for your `hostname` below, or run the script with the pattern filename as the first argument

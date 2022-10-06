@@ -21,8 +21,8 @@
    \date 09/07/2020
 */
 
-#ifndef _MS_POINTERS_HH
-#define _MS_POINTERS_HH
+#ifndef _AUG_MS_POINTERS_HH
+#define _AUG_MS_POINTERS_HH
 
 
 /** FLAGS **/
@@ -75,7 +75,8 @@
 
 #include <r_index.hpp>
 
-#include<ms_rle_string.hpp>
+#include <ms_rle_string.hpp>
+#include <thresholds_ds.hpp>
 
 #include "PlainSlp.hpp"
 #include "PoSlp.hpp"
@@ -117,31 +118,19 @@ using Vlc128 = VlcVec<sdsl::coder::elias_delta, 128>;
 template <
       class SlpT = SelfShapedSlp<var_t, DagcSd, DagcSd, SelSd>,
       class sparse_bv_type = ri::sparse_sd_vector,
-      class rle_string_t = ms_rle_string_sd
+      class rle_string_t = ms_rle_string_sd,
+      class thresholds_t = thr_bv<rle_string_t>
           >
 class ms_pointers : ri::r_index<sparse_bv_type, rle_string_t>
 {
 public:
+    thresholds_t thresholds;
+    std::vector<ulint> lce_before; // make class/ds
+    std::vector<ulint> lce_after;  // combine with above?
 
-    // std::vector<size_t> thresholds;
     SlpT slp;
 
-    // std::vector<ulint> samples_start;
     int_vector<> samples_start;
-    // int_vector<> samples_end;
-    // std::vector<ulint> samples_last;
-
-    // static const uchar TERMINATOR = 1;
-    // bool sais = true;
-    // /*
-    //  * sparse RLBWT: r (log sigma + (1+epsilon) * log (n/r)) (1+o(1)) bits
-    //  */
-    // //F column of the BWT (vector of 256 elements)
-    // std::vector<ulint> F;
-    // //L column of the BWT, run-length compressed
-    // rle_string_t bwt;
-    // ulint terminator_position = 0;
-    // ulint r = 0; //number of BWT runs
 
     typedef size_t size_type;
 
@@ -180,11 +169,8 @@ public:
             this->build_F(ifs);
         }
 
-
-
         this->r = this->bwt.number_of_runs();
         ri::ulint n = this->bwt.size();
-        // int log_r = bitsize(uint64_t(this->r));
         int log_n = bitsize(uint64_t(this->bwt.size()));
 
         verbose("Number of BWT equal-letter runs: r = " , this->r);
@@ -192,16 +178,8 @@ public:
         verbose("log2(r) = " , log2(double(this->r)));
         verbose("log2(n/r) = " , log2(double(this->bwt.size()) / this->r));
 
-
-
         read_samples(filename + ".ssa", this->r, n, samples_start);
         read_samples(filename + ".esa", this->r, n, this->samples_last);
-
-        for (size_t k = 0; k < this-> r; ++k)
-        {
-            std::cout << samples_start[k] << "\t" << this->samples_last[k] << "\n";
-        }
-
 
         std::chrono::high_resolution_clock::time_point t_insert_end = std::chrono::high_resolution_clock::now();
         verbose("R-index construction complete");
@@ -209,10 +187,78 @@ public:
         verbose("Elapsed time (s): ", std::chrono::duration<double, std::ratio<1>>(t_insert_end - t_insert_start).count());
         verbose(3);
 
-//load_grammar(filename);
+        load_grammar(filename);
 
         verbose("text length: ", slp.getLen());
         verbose("bwt length: ", this->bwt.size());
+
+        verbose("reading thresholds and generating boundary LCEs");
+        thresholds = thresholds_t(filename, &this->bwt);
+        // std::vector<ulint> thr = std::vector<ulint>(this->r);
+        // std::ifstream thr_in(filename + ".thr_pos");
+        // for (size_t i = 0; i < this->r; ++i)
+        // {
+        //     size_t thr_p = 0;
+        //     thr_in.read((char *)&thr_p, 5);
+        //     thr[i] = thr_p;
+        // }
+
+        verbose("lces");
+        t_insert_start = std::chrono::high_resolution_clock::now();
+        lce_before = std::vector<ulint>(this->r);
+        lce_after = std::vector<ulint>(this->r);
+
+        std::vector<ulint> last_r = std::vector<ulint>(256, 0);
+        for (size_t k = 0; k < this->r; k++)
+        {
+            //cout << k << "\n";
+            const char head = this->bwt.head_of(k);
+            const size_t t = thresholds[k];
+            //const size_t t = thr[k];
+
+            if (t == 0)
+            {
+                lce_before[k] = 0;
+                lce_after[k] = 0;
+            }
+            else
+            {
+                ulint textposE = this->samples_last[last_r[head]]; // end of last run of c's
+                ulint textposS = this->samples_start[k]; // start of next run of c's (current run)
+
+                // step until we reach the start a run (better way to do this?)
+                ulint search_pos = t;
+                ulint steps = 0;
+                // Get run number and first position of this run
+                //std::pair<ulint, ulint> run_info = this->bwt.run_start_pos(search_pos); // we should just mark all runs... need more speed than space here
+                //cout << "t_pos = " << search_pos << "\trun_start = " << run_info.second << "\tc = " << this->bwt.head_of(run_info.first) <<"\n";
+                while (!this->bwt.full_runs[search_pos])
+                {
+                    //cout << "REEEE -> " << this->bwt[search_pos] << "\n";
+                    search_pos = LF(search_pos, this->bwt[search_pos]); // can avoid extra select with new method
+                    //run_info = this->bwt.run_start_pos(search_pos);
+                    ++steps;
+                    //cout << "t_pos = " << search_pos << "\trun_start = " << run_info.second << "\tc = " << this->bwt.head_of(run_info.first) <<"\n";
+                }
+                //const size_t t_sa_r = this->bwt.full_runs.rank(search_pos);
+                const size_t t_sa_r = this->bwt.run_of_position(search_pos);
+
+                ulint thr_sa = this->samples_start[t_sa_r] + steps;
+                ulint thr_sa_before = this->samples_last[(t_sa_r > 0) ? t_sa_r - 1 : this->r - 1] + steps; // check boundary case if first run
+                //ulint thr_sa_before = this->samples_last[t_sa_r - 1] + steps;
+
+                // what to set as bound? using unbounded for now
+                lce_before[k] = lceToR(slp, textposE, thr_sa_before);
+                lce_after[k] = lceToR(slp, thr_sa, textposS);
+                //ulint test_lce = lceToR(slp, textposE, textposS);
+
+                //cerr << "k = " << k << " t_sa = " << search_pos << " t_r = " <<  t_sa_r << " steps = " << steps << " t_before = " << thr_sa_before << " t_exact = " << thr_sa << "e = " << textposE << "s = " << textposS << " lce_before = " << lce_before[k] <<  " lce_test = " << test_lce << "\n";
+            }
+            last_r[head] = k;
+        }
+        t_insert_end = std::chrono::high_resolution_clock::now();
+        verbose("finished augmented thresholds construction");
+        
     }
   
 
@@ -376,8 +422,9 @@ public:
             }
             else {
                 const ri::ulint rank = this->bwt.rank(pos, c);
+                size_t thr = this->bwt.size() + 1;
 
-				size_t sa0, sa1;
+				size_t sa0, sa1, run_of_sa1;
 
 				if(rank > 0) {
 					sa0 = this->bwt.select(rank-1, c);
@@ -386,8 +433,16 @@ public:
 				if(rank < number_of_runs_of_c) {
 					sa1 = this->bwt.select(rank, c);
 					DCHECK_GT(sa1, pos);
+
+                    // run_of_sa1 = this->bwt.run_of_position(sa1);
+                    // thr = thresholds[run_of_sa1];
 				}
 				
+                // if (pos < thr)
+                // {
+                //     if (last_len <= )
+                // }
+
 				struct Triplet {
 					size_t sa, ref, len;
 				};
@@ -497,7 +552,10 @@ public:
                 //     ref0 = ref1;
                 //     sa0 = sa1;
                 // }
-                    
+
+
+                // KEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEP BELOW
+
 				DCHECK_GT(c.ref, 0);
                 ON_DEBUG(ms_lengths[m-i-1] = 1 + std::min(ms_lengths[m-i], c.len));
                 write_len(1 + std::min(last_len, c.len));
@@ -796,6 +854,7 @@ public:
         ri::ulint c_before = this->bwt.rank(i, c);
         // number of c inside the interval rn
         ri::ulint l = this->F[c] + c_before;
+        //cout << "i = " << i << "\tc = " << c << "\trank = " << c_before << "\tF[c] = " << this->F[c] << "\n";
         return l;
     }
 
@@ -815,6 +874,15 @@ public:
 
         written_bytes += samples_start.serialize(out, child, "samples_start");
 
+        for(size_t i = 0; i < this->r; ++i)
+        {
+            out.write((char *)&lce_before[i], sizeof(lce_before[i]));
+            written_bytes += sizeof(sizeof(lce_before[i]));
+
+            out.write((char *)&lce_after[i], sizeof(lce_after[i]));
+            written_bytes += sizeof(sizeof(lce_after[i]));
+        }
+
         sdsl::structure_tree::add_size(child, written_bytes);
         return written_bytes;
 
@@ -831,6 +899,14 @@ public:
         this->r = this->bwt.number_of_runs();
         this->samples_last.load(in);
         this->samples_start.load(in);
+
+        lce_before = std::vector<ulint>(this->r);
+        lce_after = std::vector<ulint>(this->r);
+        for(size_t i = 0; i < this->r; ++i)
+        {
+            in.read((char *)&lce_before[i], sizeof(lce_before[i]));
+            in.read((char *)&lce_before[i], sizeof(lce_after[i]));
+        }
         
         load_grammar(filename);
     }
