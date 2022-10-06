@@ -125,12 +125,12 @@ class ms_pointers : ri::r_index<sparse_bv_type, rle_string_t>
 {
 public:
     thresholds_t thresholds;
-    std::vector<ulint> lce_before; // make class/ds
-    std::vector<ulint> lce_after;  // combine with above?
 
     SlpT slp;
 
     int_vector<> samples_start;
+    int_vector<> before_thr_lce; // make class/ds
+    int_vector<> after_thr_lce;  // combine with above?
 
     typedef size_t size_type;
 
@@ -192,71 +192,22 @@ public:
         verbose("text length: ", slp.getLen());
         verbose("bwt length: ", this->bwt.size());
 
-        verbose("reading thresholds and generating boundary LCEs");
+        verbose("reading thresholds and boundary LCEs");
         thresholds = thresholds_t(filename, &this->bwt);
-        // std::vector<ulint> thr = std::vector<ulint>(this->r);
-        // std::ifstream thr_in(filename + ".thr_pos");
-        // for (size_t i = 0; i < this->r; ++i)
-        // {
-        //     size_t thr_p = 0;
-        //     thr_in.read((char *)&thr_p, 5);
-        //     thr[i] = thr_p;
-        // }
 
-        verbose("lces");
-        t_insert_start = std::chrono::high_resolution_clock::now();
-        lce_before = std::vector<ulint>(this->r);
-        lce_after = std::vector<ulint>(this->r);
+        std::ifstream ifs_thr_lce(filename + ".thr_lce");
 
-        std::vector<ulint> last_r = std::vector<ulint>(256, 0);
-        for (size_t k = 0; k < this->r; k++)
+        before_thr_lce = int_vector<>(r, 0, log_n);
+        after_thr_lce = int_vector<>(r, 0, log_n);
+
+        size_t i = 0;
+        while (!ifs_thr_lce.eof())
         {
-            //cout << k << "\n";
-            const char head = this->bwt.head_of(k);
-            const size_t t = thresholds[k];
-            //const size_t t = thr[k];
-
-            if (t == 0)
-            {
-                lce_before[k] = 0;
-                lce_after[k] = 0;
-            }
-            else
-            {
-                ulint textposE = this->samples_last[last_r[head]]; // end of last run of c's
-                ulint textposS = this->samples_start[k]; // start of next run of c's (current run)
-
-                // step until we reach the start a run (better way to do this?)
-                ulint search_pos = t;
-                ulint steps = 0;
-                // Get run number and first position of this run
-                //std::pair<ulint, ulint> run_info = this->bwt.run_start_pos(search_pos); // we should just mark all runs... need more speed than space here
-                //cout << "t_pos = " << search_pos << "\trun_start = " << run_info.second << "\tc = " << this->bwt.head_of(run_info.first) <<"\n";
-                while (!this->bwt.full_runs[search_pos])
-                {
-                    //cout << "REEEE -> " << this->bwt[search_pos] << "\n";
-                    search_pos = LF(search_pos, this->bwt[search_pos]); // can avoid extra select with new method
-                    //run_info = this->bwt.run_start_pos(search_pos);
-                    ++steps;
-                    //cout << "t_pos = " << search_pos << "\trun_start = " << run_info.second << "\tc = " << this->bwt.head_of(run_info.first) <<"\n";
-                }
-                //const size_t t_sa_r = this->bwt.full_runs.rank(search_pos);
-                const size_t t_sa_r = this->bwt.run_of_position(search_pos);
-
-                ulint thr_sa = this->samples_start[t_sa_r] + steps;
-                ulint thr_sa_before = this->samples_last[(t_sa_r > 0) ? t_sa_r - 1 : this->r - 1] + steps; // check boundary case if first run
-                //ulint thr_sa_before = this->samples_last[t_sa_r - 1] + steps;
-
-                // what to set as bound? using unbounded for now
-                lce_before[k] = lceToR(slp, textposE, thr_sa_before);
-                lce_after[k] = lceToR(slp, thr_sa, textposS);
-                //ulint test_lce = lceToR(slp, textposE, textposS);
-
-                //cerr << "k = " << k << " t_sa = " << search_pos << " t_r = " <<  t_sa_r << " steps = " << steps << " t_before = " << thr_sa_before << " t_exact = " << thr_sa << "e = " << textposE << "s = " << textposS << " lce_before = " << lce_before[k] <<  " lce_test = " << test_lce << "\n";
-            }
-            last_r[head] = k;
+            ifs_thr_lce.read((char *)&before_thr_lce[i], THRBYTES);
+            ifs_thr_lce.read((char *)&after_thr_lce[i], THRBYTES);
+            ++i;
         }
-        t_insert_end = std::chrono::high_resolution_clock::now();
+
         verbose("finished augmented thresholds construction");
         
     }
@@ -422,7 +373,6 @@ public:
             }
             else {
                 const ri::ulint rank = this->bwt.rank(pos, c);
-                size_t thr = this->bwt.size() + 1;
 
 				size_t sa0, sa1, run_of_sa1;
 
@@ -434,13 +384,18 @@ public:
 					sa1 = this->bwt.select(rank, c);
 					DCHECK_GT(sa1, pos);
 
-                    // run_of_sa1 = this->bwt.run_of_position(sa1);
-                    // thr = thresholds[run_of_sa1];
+                    run_of_sa1 = this->bwt.run_of_position(sa1);
+                    thr = thresholds[run_of_sa1];
 				}
 				
                 // if (pos < thr)
                 // {
-                //     if (last_len <= )
+                //     if (last_len <= before_thr_lce[run_of_sa1])
+
+                // }
+                // else
+                // {
+
                 // }
 
 				struct Triplet {
@@ -504,21 +459,22 @@ public:
 					else if(rank >= number_of_runs_of_c) {
 						return compute_preceding_lce();
 					}
-#ifdef NAIVE_LCE_SCHEDULE 
+                    #ifdef NAIVE_LCE_SCHEDULE 
 					{
+                        // INSERT CHECK HERE
 						const Triplet a = compute_preceding_lce();
 						const Triplet b = compute_succeeding_lce();
 						if(a.len < b.len) { return b; }
 						return a;
 					}
-#else //NAIVE_LCE_SCHEDULE
-#ifdef SORT_BY_DISTANCE_HEURISTIC
+                    #else //NAIVE_LCE_SCHEDULE
+                    #ifdef SORT_BY_DISTANCE_HEURISTIC
 					//! give priority to the LCE with the closer BWT position 
 					if(pos - sa0 < sa1 - pos) {
-#else
+                    #else
 					//! always evaluate the LCE with the preceding BWT position first
 					if(true) {
-#endif//SORT_BY_DISTANCE_HEURISTIC
+                    #endif//SORT_BY_DISTANCE_HEURISTIC
 						auto eval_first = &compute_preceding_lce;
 						auto eval_second = &compute_succeeding_lce;
 						const Triplet a = (*eval_first)();
@@ -854,7 +810,6 @@ public:
         ri::ulint c_before = this->bwt.rank(i, c);
         // number of c inside the interval rn
         ri::ulint l = this->F[c] + c_before;
-        //cout << "i = " << i << "\tc = " << c << "\trank = " << c_before << "\tF[c] = " << this->F[c] << "\n";
         return l;
     }
 
@@ -874,15 +829,6 @@ public:
 
         written_bytes += samples_start.serialize(out, child, "samples_start");
 
-        for(size_t i = 0; i < this->r; ++i)
-        {
-            out.write((char *)&lce_before[i], sizeof(lce_before[i]));
-            written_bytes += sizeof(sizeof(lce_before[i]));
-
-            out.write((char *)&lce_after[i], sizeof(lce_after[i]));
-            written_bytes += sizeof(sizeof(lce_after[i]));
-        }
-
         sdsl::structure_tree::add_size(child, written_bytes);
         return written_bytes;
 
@@ -899,14 +845,6 @@ public:
         this->r = this->bwt.number_of_runs();
         this->samples_last.load(in);
         this->samples_start.load(in);
-
-        lce_before = std::vector<ulint>(this->r);
-        lce_after = std::vector<ulint>(this->r);
-        for(size_t i = 0; i < this->r; ++i)
-        {
-            in.read((char *)&lce_before[i], sizeof(lce_before[i]));
-            in.read((char *)&lce_before[i], sizeof(lce_after[i]));
-        }
         
         load_grammar(filename);
     }

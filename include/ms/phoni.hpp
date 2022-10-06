@@ -197,11 +197,6 @@ public:
         read_samples(filename + ".ssa", this->r, n, samples_start);
         read_samples(filename + ".esa", this->r, n, this->samples_last);
 
-        for (size_t k = 0; k < this-> r; ++k)
-        {
-            std::cout << samples_start[k] << "\t" << this->samples_last[k] << "\n";
-        }
-
 
         std::chrono::high_resolution_clock::time_point t_insert_end = std::chrono::high_resolution_clock::now();
         verbose("R-index construction complete");
