@@ -187,7 +187,7 @@ public:
         verbose("Elapsed time (s): ", std::chrono::duration<double, std::ratio<1>>(t_insert_end - t_insert_start).count());
         verbose(3);
 
-        load_grammar(filename);
+        //load_grammar(filename);
 
         verbose("text length: ", slp.getLen());
         verbose("bwt length: ", this->bwt.size());
@@ -197,14 +197,21 @@ public:
 
         std::ifstream ifs_thr_lce(filename + ".thr_lce");
 
-        before_thr_lce = int_vector<>(r, 0, log_n);
-        after_thr_lce = int_vector<>(r, 0, log_n);
+        before_thr_lce = int_vector<>(this->r, 0, log_n);
+        after_thr_lce = int_vector<>(this->r, 0, log_n);
 
         size_t i = 0;
         while (!ifs_thr_lce.eof())
         {
-            ifs_thr_lce.read((char *)&before_thr_lce[i], THRBYTES);
-            ifs_thr_lce.read((char *)&after_thr_lce[i], THRBYTES);
+            uint64_t before_lce = 0;
+            uint64_t after_lce = 0;
+
+            ifs_thr_lce.read((char *)&before_lce, THRBYTES);
+            before_thr_lce[i] = before_lce;
+
+            ifs_thr_lce.read((char *)&after_lce, THRBYTES);
+            after_thr_lce[i] = after_lce;
+
             ++i;
         }
 
@@ -374,29 +381,13 @@ public:
             else {
                 const ri::ulint rank = this->bwt.rank(pos, c);
 
-				size_t sa0, sa1, run_of_sa1;
+				size_t sa0, sa1;
+                ri::ulint run1;
 
-				if(rank > 0) {
-					sa0 = this->bwt.select(rank-1, c);
-					DCHECK_LT(sa0, pos);
-				}
 				if(rank < number_of_runs_of_c) {
 					sa1 = this->bwt.select(rank, c);
 					DCHECK_GT(sa1, pos);
-
-                    run_of_sa1 = this->bwt.run_of_position(sa1);
-                    thr = thresholds[run_of_sa1];
 				}
-				
-                // if (pos < thr)
-                // {
-                //     if (last_len <= before_thr_lce[run_of_sa1])
-
-                // }
-                // else
-                // {
-
-                // }
 
 				struct Triplet {
 					size_t sa, ref, len;
@@ -406,7 +397,7 @@ public:
                 // if(rank < this->bwt.number_of_letter(c)) { // LCE with the succeeding position
 					DCHECK_LT(rank, number_of_runs_of_c);
 
-					const ri::ulint run1 = this->bwt.run_of_position(sa1);
+					//const ri::ulint run1 = this->bwt.run_of_position(sa1);
 
                     const size_t textposStart = this->samples_start[run1];
 					#ifdef MEASURE_TIME
@@ -423,7 +414,7 @@ public:
                     //         DCHECK_GT(lenStart, lenLast);
                     // )
                     const size_t ref1 = textposStart;
-                    const size_t len1 = lenStart;
+                    const size_t len1 = std::min(last_len, lenStart);
 					return {sa1, ref1, len1};
                 };
 
@@ -448,59 +439,118 @@ public:
                     //         DCHECK_LE(lenStart, lenLast);
                     // )
                     const size_t ref0 = textposLast;
-                    const size_t len0 = lenLast;
+                    const size_t len0 = std::min(last_len, lenLast);
 					return {sa0, ref0, len0};
                 };
 
-				const Triplet c = [&] () -> Triplet {
+				const Triplet jump = [&] () -> Triplet {
 					if(rank == 0) {
+                        // Check only succeeding -> we ignore thresholds in this case
+                        // TODO: Can we define the succeding LCE in this case?
 						return compute_succeeding_lce();
 					}
 					else if(rank >= number_of_runs_of_c) {
+                        // Check only preceding -> we ignore thresholds in this case
+                        // TODO: Can we define the preceding LCE in this case?
+                        sa0 = this->bwt.select(rank-1, c);
 						return compute_preceding_lce();
 					}
-                    #ifdef NAIVE_LCE_SCHEDULE 
-					{
+                    // #ifdef NAIVE_LCE_SCHEDULE 
+					// {
                         // INSERT CHECK HERE
-						const Triplet a = compute_preceding_lce();
-						const Triplet b = compute_succeeding_lce();
-						if(a.len < b.len) { return b; }
-						return a;
-					}
-                    #else //NAIVE_LCE_SCHEDULE
-                    #ifdef SORT_BY_DISTANCE_HEURISTIC
-					//! give priority to the LCE with the closer BWT position 
-					if(pos - sa0 < sa1 - pos) {
-                    #else
-					//! always evaluate the LCE with the preceding BWT position first
-					if(true) {
-                    #endif//SORT_BY_DISTANCE_HEURISTIC
-						auto eval_first = &compute_preceding_lce;
-						auto eval_second = &compute_succeeding_lce;
-						const Triplet a = (*eval_first)();
-						if(last_len <= a.len) {
-							#ifdef MEASURE_TIME
-							++count_lce_skips;
-							#endif
-							return a;
-						} 
-						const Triplet b = (*eval_second)();
-						if(b.len > a.len) { return b; }
-						return a;
-					} 
-					auto eval_first = &compute_succeeding_lce;
-					auto eval_second = &compute_preceding_lce;
-					const Triplet a = (*eval_first)();
-					if(last_len <= a.len) {
-						#ifdef MEASURE_TIME
-						++count_lce_skips;
-						#endif
-						return a;
-					} 
-					const Triplet b = (*eval_second)();
-					if(b.len > a.len) { return b; }
-					return a;
-#endif //NAIVE_LCE_SCHEDULE
+                        // Check thresholds and boundary LCEs first
+                        run1 = this->bwt.run_of_position(sa1);
+                        const size_t thr = thresholds[run1];
+                        if (pos < thr) // check preceding thr_lce or compute new preceding LCE
+                        {
+					        sa0 = this->bwt.select(rank-1, c);
+					        DCHECK_LT(sa0, pos);
+
+                            const size_t preceding_thr_lce = before_thr_lce[run1];
+                            if (last_len <= preceding_thr_lce) 
+                            {
+                                DCHECK_GT(rank, 0);
+
+                                const ri::ulint run0 = this->bwt.run_of_position(sa0);
+                                
+                                const size_t ref0 = this->samples_last[run0];
+                                const size_t len0 = last_len;
+
+                                #ifdef MEASURE_TIME
+							    count_lce_skips += 2;
+							    #endif
+                                return {sa0, ref0, len0};
+                            }
+                            else 
+                            {
+                                #ifdef MEASURE_TIME
+							    ++count_lce_skips;
+							    #endif
+                                return compute_preceding_lce();
+                            }
+                        }
+                        else 
+                        {
+                            const size_t succeeding_thr_lce = after_thr_lce[run1];
+                            if (last_len <= succeeding_thr_lce)
+                            {
+                                DCHECK_LT(rank, number_of_runs_of_c);
+                                
+                                const size_t ref1 = this->samples_start[run1];;
+                                const size_t len1 = last_len;
+
+                                #ifdef MEASURE_TIME
+							    count_lce_skips += 2;
+							    #endif
+                                return {sa1, ref1, len1};
+                            }
+                            else 
+                            {
+                                #ifdef MEASURE_TIME
+							    ++count_lce_skips;
+							    #endif
+                                return compute_succeeding_lce();
+                            }
+                        }
+						// const Triplet a = compute_preceding_lce();
+						// const Triplet b = compute_succeeding_lce();
+						// if(a.len < b.len) { return b; }
+						// return a;
+					//}
+//                     #else //NAIVE_LCE_SCHEDULE
+//                     #ifdef SORT_BY_DISTANCE_HEURISTIC
+// 					//! give priority to the LCE with the closer BWT position 
+// 					if(pos - sa0 < sa1 - pos) {
+//                     #else
+// 					//! always evaluate the LCE with the preceding BWT position first
+// 					if(true) {
+//                     #endif//SORT_BY_DISTANCE_HEURISTIC
+// 						auto eval_first = &compute_preceding_lce;
+// 						auto eval_second = &compute_succeeding_lce;
+// 						const Triplet a = (*eval_first)();
+// 						if(last_len <= a.len) {
+// 							#ifdef MEASURE_TIME
+// 							++count_lce_skips;
+// 							#endif
+// 							return a;
+// 						} 
+// 						const Triplet b = (*eval_second)();
+// 						if(b.len > a.len) { return b; }
+// 						return a;
+// 					} 
+// 					auto eval_first = &compute_succeeding_lce;
+// 					auto eval_second = &compute_preceding_lce;
+// 					const Triplet a = (*eval_first)();
+// 					if(last_len <= a.len) {
+// 						#ifdef MEASURE_TIME
+// 						++count_lce_skips;
+// 						#endif
+// 						return a;
+// 					} 
+// 					const Triplet b = (*eval_second)();
+// 					if(b.len > a.len) { return b; }
+// 					return a;
+// #endif //NAIVE_LCE_SCHEDULE
 				}();
 
                 // if(len0 < len1) {
@@ -509,15 +559,15 @@ public:
                 //     sa0 = sa1;
                 // }
 
+				DCHECK_GT(jump.ref, 0);
+                ON_DEBUG(ms_lengths[m-i-1] = 1 + jump.len);
+                write_len(1 + jump.len);
+                ON_DEBUG(ms_references[m-i-1] = jump.ref);
+                write_ref(jump.ref);
 
-                // KEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEP BELOW
+                //std::cerr << ((jump.sa < pos) ? "UP" : "DOWN") << "\t" << jump.sa << "\n";
 
-				DCHECK_GT(c.ref, 0);
-                ON_DEBUG(ms_lengths[m-i-1] = 1 + std::min(ms_lengths[m-i], c.len));
-                write_len(1 + std::min(last_len, c.len));
-                ON_DEBUG(ms_references[m-i-1] = c.ref);
-                write_ref(c.ref);
-                pos = c.sa;
+                pos = jump.sa;
 
                 DCHECK_GT(ms_lengths[m-i-1], 0);
                 // std::cout << "1 Len for " << (m-i-1) << " : " << ms_lengths[m-i-1] << " with LCE " << std::max(len1,len0) << std::endl;
@@ -649,11 +699,8 @@ public:
                 const ri::ulint rank = this->bwt.rank(pos, c);
 
 				size_t sa0, sa1;
+                ri::ulint run1;
 
-				if(rank > 0) {
-					sa0 = this->bwt.select(rank-1, c);
-					DCHECK_LT(sa0, pos);
-				}
 				if(rank < number_of_runs_of_c) {
 					sa1 = this->bwt.select(rank, c);
 					DCHECK_GT(sa1, pos);
@@ -667,7 +714,7 @@ public:
                 // if(rank < this->bwt.number_of_letter(c)) { // LCE with the succeeding position
 					DCHECK_LT(rank, number_of_runs_of_c);
 
-					const ri::ulint run1 = this->bwt.run_of_position(sa1);
+					//const ri::ulint run1 = this->bwt.run_of_position(sa1);
 
                     const size_t textposStart = this->samples_start[run1];
 					#ifdef MEASURE_TIME
@@ -684,7 +731,7 @@ public:
                     //         DCHECK_GT(lenStart, lenLast);
                     // )
                     const size_t ref1 = textposStart;
-                    const size_t len1 = lenStart;
+                    const size_t len1 = std::min(lenStart, last_len);
 					return {sa1, ref1, len1};
                 };
 
@@ -709,58 +756,124 @@ public:
                     //         DCHECK_LE(lenStart, lenLast);
                     // )
                     const size_t ref0 = textposLast;
-                    const size_t len0 = lenLast;
+                    const size_t len0 = std::min(last_len, lenLast);
 					return {sa0, ref0, len0};
                 };
 
-				const Triplet c = [&] () -> Triplet {
+				const Triplet jump = [&] () -> Triplet {
 					if(rank == 0) {
+                        // Check only succeeding -> we ignore thresholds in this case
+                        // TODO: Can we define the succeding LCE in this case?
 						return compute_succeeding_lce();
 					}
 					else if(rank >= number_of_runs_of_c) {
+                        // Check only preceding -> we ignore thresholds in this case
+                        // TODO: Can we define the preceding LCE in this case?
+                        sa0 = this->bwt.select(rank-1, c);
 						return compute_preceding_lce();
 					}
-#ifdef NAIVE_LCE_SCHEDULE 
-					{
-						const Triplet a = compute_preceding_lce();
-						const Triplet b = compute_succeeding_lce();
-						if(a.len < b.len) { return b; }
-						return a;
-					}
-#else //NAIVE_LCE_SCHEDULE
-#ifdef SORT_BY_DISTANCE_HEURISTIC
-					//! give priority to the LCE with the closer BWT position 
-					if(pos - sa0 < sa1 - pos) {
-#else
-					//! always evaluate the LCE with the preceding BWT position first
-					if(true) {
-#endif//SORT_BY_DISTANCE_HEURISTIC
-						auto eval_first = &compute_preceding_lce;
-						auto eval_second = &compute_succeeding_lce;
-						const Triplet a = (*eval_first)();
-						if(last_len <= a.len) {
-							#ifdef MEASURE_TIME
-							++count_lce_skips;
-							#endif
-							return a;
-						} 
-						const Triplet b = (*eval_second)();
-						if(b.len > a.len) { return b; }
-						return a;
-					} 
-					auto eval_first = &compute_succeeding_lce;
-					auto eval_second = &compute_preceding_lce;
-					const Triplet a = (*eval_first)();
-					if(last_len <= a.len) {
-						#ifdef MEASURE_TIME
-						++count_lce_skips;
-						#endif
-						return a;
-					} 
-					const Triplet b = (*eval_second)();
-					if(b.len > a.len) { return b; }
-					return a;
-#endif //NAIVE_LCE_SCHEDULE
+                    // #ifdef NAIVE_LCE_SCHEDULE 
+					// {
+                        // INSERT CHECK HERE
+                        // Check thresholds and boundary LCEs first
+                        run1 = this->bwt.run_of_position(sa1);
+                        const size_t thr = thresholds[run1];
+                        if (pos < thr) // check preceding thr_lce or compute new preceding LCE
+                        {
+                            sa0 = this->bwt.select(rank-1, c);
+					        DCHECK_LT(sa0, pos);
+
+                            const size_t preceding_thr_lce = before_thr_lce[run1];
+                            if (last_len <= preceding_thr_lce) 
+                            {
+                                DCHECK_GT(rank, 0);
+
+                                const ri::ulint run0 = this->bwt.run_of_position(sa0);
+                                
+                                const size_t ref0 = this->samples_last[run0];
+                                const size_t len0 = last_len;
+
+                                #ifdef MEASURE_TIME
+							    count_lce_skips += 2;
+							    #endif
+                                return {sa0, ref0, len0};
+                            }
+                            else 
+                            {
+                                #ifdef MEASURE_TIME
+							    ++count_lce_skips;
+							    #endif
+                                return compute_preceding_lce();
+                            }
+                        }
+                        else 
+                        {
+                            const size_t succeeding_thr_lce = after_thr_lce[run1];
+                            if (last_len <= succeeding_thr_lce) 
+                            {
+                                DCHECK_LT(rank, number_of_runs_of_c);
+                                
+                                const size_t ref1 = this->samples_start[run1];
+                                const size_t len1 = last_len;
+
+                                #ifdef MEASURE_TIME
+							    count_lce_skips += 2;
+							    #endif
+                                return {sa1, ref1, len1};
+                            }
+                            else 
+                            {
+                                #ifdef MEASURE_TIME
+							    ++count_lce_skips;
+							    #endif
+                                return compute_succeeding_lce();
+                            }
+                        }
+                        /*
+                            We have thresholds, so don't need to ever compute both LCEs like Phoni (we skip this code)
+                            Similarly, no distance heuristic
+                        */
+
+
+// 						const Triplet a = compute_preceding_lce();
+// 						const Triplet b = compute_succeeding_lce();
+// 						if(a.len < b.len) { return b; }
+// 						return a;
+// 					}
+// #else //NAIVE_LCE_SCHEDULE
+// #ifdef SORT_BY_DISTANCE_HEURISTIC
+// 					//! give priority to the LCE with the closer BWT position 
+// 					if(pos - sa0 < sa1 - pos) {
+// #else
+// 					//! always evaluate the LCE with the preceding BWT position first
+// 					if(true) {
+// #endif//SORT_BY_DISTANCE_HEURISTIC
+// 						auto eval_first = &compute_preceding_lce;
+// 						auto eval_second = &compute_succeeding_lce;
+// 						const Triplet a = (*eval_first)();
+// 						if(last_len <= a.len) {
+// 							#ifdef MEASURE_TIME
+// 							++count_lce_skips;
+// 							#endif
+// 							return a;
+// 						} 
+// 						const Triplet b = (*eval_second)();
+// 						if(b.len > a.len) { return b; }
+// 						return a;
+// 					} 
+// 					auto eval_first = &compute_succeeding_lce;
+// 					auto eval_second = &compute_preceding_lce;
+// 					const Triplet a = (*eval_first)();
+// 					if(last_len <= a.len) {
+// 						#ifdef MEASURE_TIME
+// 						++count_lce_skips;
+// 						#endif
+// 						return a;
+// 					} 
+// 					const Triplet b = (*eval_second)();
+// 					if(b.len > a.len) { return b; }
+// 					return a;
+// #endif //NAIVE_LCE_SCHEDULE
 				}();
 
                 // if(len0 < len1) {
@@ -769,12 +882,15 @@ public:
                 //     sa0 = sa1;
                 // }
                     
-				DCHECK_GT(c.ref, 0);
-                ON_DEBUG(ms_lengths[m-i-1] = 1 + std::min(ms_lengths[m-i], c.len));
-                write_len(1 + std::min(last_len, c.len));
-                ON_DEBUG(ms_references[m-i-1] = c.ref);
-                write_ref(c.ref);
-                pos = c.sa;
+				DCHECK_GT(jump.ref, 0);
+                ON_DEBUG(ms_lengths[m-i-1] = 1 + jump.len);
+                write_len(1 + jump.len);
+                ON_DEBUG(ms_references[m-i-1] = jump.ref);
+                write_ref(jump.ref);
+
+                //std::cerr << ((jump.sa < pos) ? "UP" : "DOWN") << "\t" << jump.sa << "\n";
+
+                pos = jump.sa;
 
                 DCHECK_GT(ms_lengths[m-i-1], 0);
                 // std::cout << "1 Len for " << (m-i-1) << " : " << ms_lengths[m-i-1] << " with LCE " << std::max(len1,len0) << std::endl;
@@ -829,9 +945,13 @@ public:
 
         written_bytes += samples_start.serialize(out, child, "samples_start");
 
+        written_bytes += thresholds.serialize(out, child, "thresholds");
+
+        written_bytes += before_thr_lce.serialize(out, child, "before_thr_lce");
+        written_bytes += after_thr_lce.serialize(out, child, "after_thr_lce");
+
         sdsl::structure_tree::add_size(child, written_bytes);
         return written_bytes;
-
     }
 
     /* load the structure from the istream
@@ -845,6 +965,11 @@ public:
         this->r = this->bwt.number_of_runs();
         this->samples_last.load(in);
         this->samples_start.load(in);
+
+        thresholds.load(in, &this->bwt);
+        
+        before_thr_lce.load(in);
+        after_thr_lce.load(in);
         
         load_grammar(filename);
     }

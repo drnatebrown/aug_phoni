@@ -57,7 +57,7 @@ void run(const Args& args) {
 
   FILE *out_fd;
 
-  const std::string tmp_out_filename = std::string(args.patterns) + ".ms.tmp.out";
+  const std::string tmp_out_filename = std::string(args.patterns) + ".ms.tmp.out.aug";
 
   if ((out_fd = fopen(tmp_out_filename.c_str(), "w")) == nullptr)
     error("open() file " + tmp_out_filename + " failed");
@@ -86,14 +86,14 @@ void run(const Args& args) {
   verbose("Printing plain output");
   t_insert_start = std::chrono::high_resolution_clock::now();
 
-  std::ofstream f_pointers(args.patterns + ".pointers");
-  std::ofstream f_lengths(args.patterns + ".lengths");
+  std::ofstream f_pointers(args.patterns + ".pointers.aug");
+  std::ofstream f_lengths(args.patterns + ".lengths.aug");
 
   if (!f_pointers.is_open())
-    error("open() file " + std::string(args.patterns) + ".pointers failed");
+    error("open() file " + std::string(args.patterns) + ".pointers.aug failed");
 
   if (!f_lengths.is_open())
-    error("open() file " + std::string(args.patterns) + ".lengths failed");
+    error("open() file " + std::string(args.patterns) + ".lengths.aug failed");
 
   FILE *in_fd;
 
