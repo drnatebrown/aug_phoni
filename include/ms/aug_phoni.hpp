@@ -192,9 +192,9 @@ public:
         verbose("text length: ", slp.getLen());
         verbose("bwt length: ", this->bwt.size());
 
-        verbose("reading thresholds and boundary LCEs");
         thresholds = thresholds_t(filename, &this->bwt);
 
+        verbose("Reading threshold/boundary LCEs");
         std::ifstream ifs_thr_lce(filename + ".thr_lce");
 
         before_thr_lce = int_vector<>(this->r, 0, log_n);
@@ -216,7 +216,6 @@ public:
         }
 
         verbose("finished augmented thresholds construction");
-        
     }
   
 

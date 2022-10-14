@@ -16,8 +16,7 @@ function die {
 ######################
 
 # TODO: the text datasets we want to index: 
-#datasets=(chr19.1.fa chr19.16.fa chr19.32.fa chr19.64.fa chr19.100.fa chr19.128.fa chr19.256.fa  chr19.512.fa chr19.1000.fa)
-datasets=(chr19.16.fa)
+datasets=(chr19.1.fa chr19.16.fa chr19.32.fa chr19.64.fa chr19.100.fa chr19.128.fa chr19.256.fa  chr19.512.fa chr19.1000.fa)
 
 # TODO: add here your hostname and change the variables such that the programs for the evaluation can be found
 if [[ $(hostname) = "shannon" ]]; then
@@ -75,7 +74,7 @@ mkdir -p $LOG_DIR || die "cannot create $LOG_DIR for logging"
 
 base_prg=$PHONI_BULIDDIR/no_thresholds
 thresholds_prg=$PHONI_BULIDDIR/thresholds
-lce_prg=$LCE_BULIDDIR/pfp_lcp
+lce_prg=$LCE_BULIDDIR/test/src/pfp_lcp
 bigrepair_prg=$PHONI_BULIDDIR/_deps/bigrepair-src/bigrepair
 slpenc_prg=$PHONI_BULIDDIR/_deps/shaped_slp-build/SlpEncBuild
 readlog_prg=$PHONI_ROOTDIR/readlog.sh
@@ -99,6 +98,8 @@ monibuild_prg=$PHONI_BULIDDIR/test/src/rlebwt_ms_build
 moni_prg=$PHONI_BULIDDIR/test/src/rlems
 phoni_prg=$PHONI_BULIDDIR/test/src/phoni_compatibility
 phonibuild_prg=$PHONI_BULIDDIR/test/src/build_phoni
+aug_prg=$PHONI_BULIDDIR/test/src/aug_compatibility
+augbuild_prg=$PHONI_BULIDDIR/test/src/build_aug
 rlbwt_prg=$PHONI_BULIDDIR/test/src/bwt2rlbwt
 
 
@@ -169,17 +170,17 @@ for filename in $datasets; do
 #  ## BEGIN MONI
 #  #############
 #  
-#  if [[ ! -e $dataset.thr ]]; then
-#  	stats="$basestats type=thresholds "
-#  	logFile=$LOG_DIR/$filename.thresholds.log
-#  	set -x
-#  	Time $thresholds_prg -f $dataset > "$logFile" 2>&1
-#  	set +x
-#  	echo -n "$stats"
-#  	echo -n "thressize=$(stat --format="%s" $dataset.thr) "
-#  	echo -n "thrpossize=$(stat --format="%s" $dataset.thr_pos) "
-#  	$readlog_prg $logFile
-#  fi
+ if [[ ! -e $dataset.thr ]]; then
+ 	stats="$basestats type=thresholds "
+ 	logFile=$LOG_DIR/$filename.thresholds.log
+ 	set -x
+ 	Time $thresholds_prg -f $dataset > "$logFile" 2>&1
+ 	set +x
+ 	echo -n "$stats"
+ 	echo -n "thressize=$(stat --format="%s" $dataset.thr) "
+ 	echo -n "thrpossize=$(stat --format="%s" $dataset.thr_pos) "
+ 	$readlog_prg $logFile
+ fi
 #
 #  if [[ ! -e $dataset.ms ]]; then
 #  stats="$basestats type=monibuild "
@@ -249,6 +250,30 @@ if [[ ! -e $dataset.phoni ]]; then
 	$readlog_prg $logFile
 fi
 
+# BUILD AUG PHONI
+
+if [[ ! -e $dataset.thr_lce ]]; then
+	logFile=$LOG_DIR/$filename.thr_lce.log
+	stats="$basestats type=thr_lce_build "
+	set -x
+	Time $lce_prg -f "$dataset" > "$logFile" 2>&1
+	set +x
+	echo -n "$stats"
+	echo -n "thr_lce_size=$(stat --format="%s" $dataset.thr_lce) "
+	$readlog_prg $logFile
+fi
+
+if [[ ! -e $dataset.aug ]]; then
+	logFile=$LOG_DIR/$filename.augbuild.log
+	stats="$basestats type=augbuild "
+	set -x
+	Time $augbuild_prg -f "$dataset" > "$logFile" 2>&1
+	set +x
+	echo -n "$stats"
+	echo -n "augsize=$(stat --format="%s" $dataset.aug) "
+	$readlog_prg $logFile
+fi
+
 for phoni_param in 'none' 'solca' 'solcanaive' 'naive'; do
 
 	if [[ $phoni_param = 'solca' ]] || [[ $phoni_param = 'solcanaive' ]]; then
@@ -278,9 +303,10 @@ for phoni_param in 'none' 'solca' 'solcanaive' 'naive'; do
 	Time $slpenc_prg -e ${grammarencoding}  -f ${grammartype} -i ${grammarinfile} -o "$slpfilename" > "$logFile" 2>&1
 	set +x
 	echo -n "$stats"
-	echo -n "slpsize=$(stat --format="%s" $dataset.slp) "
+	echo -n "slpsize=$(stat --format="%s" $slpfilename) "
 	$readlog_prg $logFile
 
+	# Regular PHONI
     logFile=$LOG_DIR/$filename.phoni.log
     stats="$basestats type=phoni param=${phoni_param} "
     set -x
@@ -291,10 +317,25 @@ for phoni_param in 'none' 'solca' 'solcanaive' 'naive'; do
     cp ${PATTERN_FILE}.lengths $LOG_DIR/$filename.phoni.${phoni_param}.lengths
     cp ${PATTERN_FILE}.pointers  $LOG_DIR/$filename.phoni.${phoni_param}.pointers
 
+	# Augmented PHONI
+	logFile=$LOG_DIR/$filename.aug.log
+    stats="$basestats type=aug param=${phoni_param} "
+    set -x
+    Time $aug_prg -f "$dataset" $(echo ${phoniexecparam}) -p ${PATTERN_FILE}  > "$logFile" 2>&1
+    set +x
+    echo -n "$stats"
+    $readlog_prg $logFile
+    cp ${PATTERN_FILE}.lengths $LOG_DIR/$filename.aug.${phoni_param}.lengths
+    cp ${PATTERN_FILE}.pointers  $LOG_DIR/$filename.aug.${phoni_param}.pointers
+
     if [[ $phoni_param != 'none' ]]; then
-	    echo -n "$basestats type=mscheck param=${phoni_param} "
+	    echo -n "$basestats type=mscheck_phoni param=${phoni_param} "
 	    echo "check=\"$(diff -q $LOG_DIR/$filename.phoni.none.lengths $LOG_DIR/$filename.phoni.${phoni_param}.lengths)\""
+		echo -n "$basestats type=mscheck_aug param=${phoni_param} "
+		echo "check=\"$(diff -q $LOG_DIR/$filename.phoni.none.lengths $LOG_DIR/$filename.aug.${phoni_param}.lengths)\""
     fi
+
+
  done # for phoni_param
 
 

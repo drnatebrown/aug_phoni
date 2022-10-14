@@ -1,13 +1,16 @@
 /* thresholds_ds - Stores the thresholds in compressed and plain ways 
     Copyright (C) 2020 Massimiliano Rossi
+
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
+
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
+
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see http://www.gnu.org/licenses/ .
 */
@@ -23,7 +26,7 @@
 
 #include <common.hpp>
 
-#include <malloc_count.h>
+//#include <malloc_count.h>
 
 #include <sdsl/rmq_support.hpp>
 #include <sdsl/int_vector.hpp>
@@ -84,7 +87,7 @@ public:
 
         std::chrono::high_resolution_clock::time_point t_insert_end = std::chrono::high_resolution_clock::now();
 
-        verbose("Memory peak: ", malloc_count_peak());
+        //verbose("Memory peak: ", malloc_count_peak());
         verbose("Elapsed time (s): ", std::chrono::duration<double, std::ratio<1>>(t_insert_end - t_insert_start).count());
     }
 
@@ -269,7 +272,7 @@ public:
 
         std::chrono::high_resolution_clock::time_point t_insert_end = std::chrono::high_resolution_clock::now();
 
-        verbose("Memory peak: ", malloc_count_peak());
+        //verbose("Memory peak: ", malloc_count_peak());
         verbose("Elapsed time (s): ", std::chrono::duration<double, std::ratio<1>>(t_insert_end - t_insert_start).count());
     }
 
@@ -432,7 +435,7 @@ public:
 
         std::chrono::high_resolution_clock::time_point t_insert_end = std::chrono::high_resolution_clock::now();
 
-        verbose("Memory peak: ", malloc_count_peak());
+        //verbose("Memory peak: ", malloc_count_peak());
         verbose("Elapsed time (s): ", std::chrono::duration<double, std::ratio<1>>(t_insert_end - t_insert_start).count());
     }
 
@@ -472,7 +475,7 @@ public:
         swap(*this, other);
     }
 
-    size_t operator[] (size_t& i)
+    size_t operator[] (size_t i)
     {
         assert(i < bwt->number_of_runs());
 
@@ -524,5 +527,7 @@ public:
         return ".thrbv";
     }
 };
+
+
 
 #endif /* end of include guard: _MS_THRESHOLDS_DS_HH */
