@@ -42,7 +42,7 @@ elif [[ $(hostname) = "mutante" ]]; then
 PHONI_ROOTDIR='/home/natebrown/Repos/phoni/'
 PHONI_BULIDDIR=$PHONI_ROOTDIR/build
 DATASET_DIR='/home/natebrown/Data'
-PATTERN_FILE=$DATASET_DIR/Pattern/chr19.10.fa
+PATTERN_FILE=$DATASET_DIR/Pattern/chr19.1.fa
 LOG_DIR='/home/natebrown/Log'
 LCE_ROOTDIR='/home/natebrown/Repos/pfp-thresholds/'
 LCE_BULIDDIR=$LCE_ROOTDIR/build
@@ -263,16 +263,16 @@ if [[ ! -e $dataset.thr_lce ]]; then
 	$readlog_prg $logFile
 fi
 
-if [[ ! -e $dataset.aug ]]; then
-	logFile=$LOG_DIR/$filename.augbuild.log
-	stats="$basestats type=augbuild "
-	set -x
-	Time $augbuild_prg -f "$dataset" > "$logFile" 2>&1
-	set +x
-	echo -n "$stats"
-	echo -n "augsize=$(stat --format="%s" $dataset.aug) "
-	$readlog_prg $logFile
-fi
+# if [[ ! -e $dataset.aug ]]; then
+# 	logFile=$LOG_DIR/$filename.augbuild.log
+# 	stats="$basestats type=augbuild "
+# 	set -x
+# 	Time $augbuild_prg -f "$dataset" > "$logFile" 2>&1
+# 	set +x
+# 	echo -n "$stats"
+# 	echo -n "augsize=$(stat --format="%s" $dataset.aug) "
+# 	$readlog_prg $logFile
+# fi
 
 for phoni_param in 'none' 'solca' 'solcanaive' 'naive'; do
 
@@ -306,34 +306,47 @@ for phoni_param in 'none' 'solca' 'solcanaive' 'naive'; do
 	echo -n "slpsize=$(stat --format="%s" $slpfilename) "
 	$readlog_prg $logFile
 
-	# Regular PHONI
-    logFile=$LOG_DIR/$filename.phoni.log
-    stats="$basestats type=phoni param=${phoni_param} "
-    set -x
-    Time $phoni_prg -f "$dataset" $(echo ${phoniexecparam}) -p ${PATTERN_FILE}  > "$logFile" 2>&1
-    set +x
-    echo -n "$stats"
-    $readlog_prg $logFile
-    cp ${PATTERN_FILE}.lengths $LOG_DIR/$filename.phoni.${phoni_param}.lengths
-    cp ${PATTERN_FILE}.pointers  $LOG_DIR/$filename.phoni.${phoni_param}.pointers
+	# # Regular PHONI
+    # logFile=$LOG_DIR/$filename.phoni.log
+    # stats="$basestats type=phoni param=${phoni_param} "
+    # set -x
+    # Time $phoni_prg -f "$dataset" $(echo ${phoniexecparam}) -p ${PATTERN_FILE}  > "$logFile" 2>&1
+    # set +x
+    # echo -n "$stats"
+    # $readlog_prg $logFile
+    # cp ${PATTERN_FILE}.lengths $LOG_DIR/$filename.phoni.${phoni_param}.lengths
+    # cp ${PATTERN_FILE}.pointers  $LOG_DIR/$filename.phoni.${phoni_param}.pointers
 
-	# Augmented PHONI
-	logFile=$LOG_DIR/$filename.aug.log
-    stats="$basestats type=aug param=${phoni_param} "
-    set -x
-    Time $aug_prg -f "$dataset" $(echo ${phoniexecparam}) -p ${PATTERN_FILE}  > "$logFile" 2>&1
-    set +x
-    echo -n "$stats"
-    $readlog_prg $logFile
-    cp ${PATTERN_FILE}.lengths $LOG_DIR/$filename.aug.${phoni_param}.lengths
-    cp ${PATTERN_FILE}.pointers  $LOG_DIR/$filename.aug.${phoni_param}.pointers
 
-    if [[ $phoni_param != 'none' ]]; then
-	    echo -n "$basestats type=mscheck_phoni param=${phoni_param} "
-	    echo "check=\"$(diff -q $LOG_DIR/$filename.phoni.none.lengths $LOG_DIR/$filename.phoni.${phoni_param}.lengths)\""
-		echo -n "$basestats type=mscheck_aug param=${phoni_param} "
-		echo "check=\"$(diff -q $LOG_DIR/$filename.phoni.none.lengths $LOG_DIR/$filename.aug.${phoni_param}.lengths)\""
-    fi
+	for aug_param in 'plain' 'compressed'; do
+		logFile=$LOG_DIR/$filename.augbuild.log
+		stats="$basestats type=augbuild param=$aug_param "
+		set -x
+		Time $augbuild_prg -f -t $(echo ${aug_param}) -b 0 "$dataset" > "$logFile" 2>&1
+		set +x
+		echo -n "$stats"
+		echo -n "augsize=$(stat --format="%s" $dataset.aug) "
+		$readlog_prg $logFile
+
+		# Augmented PHONI
+		logFile=$LOG_DIR/$filename.aug.log
+		stats="$basestats type=aug param=${phoni_param} "
+		set -x
+		Time $aug_prg -f "$dataset" $(echo ${phoniexecparam}) -t $(echo ${aug_param}) -p ${PATTERN_FILE}  > "$logFile" 2>&1
+		set +x
+		echo -n "$stats"
+		$readlog_prg $logFile
+		cp ${PATTERN_FILE}.lengths $LOG_DIR/$filename.aug.${phoni_param}.${aug_param}.lengths
+		cp ${PATTERN_FILE}.pointers  $LOG_DIR/$filename.aug.${phoni_param}.${aug_param}.pointers
+
+		echo -n "$basestats type=mscheck_aug param=${aug_param} "
+		echo "check=\"$(diff -q $LOG_DIR/$filename.phoni.none.lengths $LOG_DIR/$filename.aug.${phoni_param}.${aug_param}.lengths)\""
+	done
+
+    # if [[ $phoni_param != 'none' ]]; then
+	#     echo -n "$basestats type=mscheck_phoni param=${phoni_param} "
+	#     echo "check=\"$(diff -q $LOG_DIR/$filename.phoni.none.lengths $LOG_DIR/$filename.phoni.${phoni_param}.lengths)\""
+    # fi
 
 
  done # for phoni_param

@@ -77,6 +77,7 @@
 
 #include <ms_rle_string.hpp>
 #include <thresholds_ds.hpp>
+#include <thr_lce_ds.hpp>
 
 #include "PlainSlp.hpp"
 #include "PoSlp.hpp"
@@ -117,20 +118,20 @@ using Vlc128 = VlcVec<sdsl::coder::elias_delta, 128>;
 
 template <
       class SlpT = SelfShapedSlp<var_t, DagcSd, DagcSd, SelSd>,
-      class sparse_bv_type = ri::sparse_sd_vector,
       class rle_string_t = ms_rle_string_sd,
+      class thr_lce_t = thr_lce_plain<rle_string_t>,
+      class sparse_bv_type = ri::sparse_sd_vector,
       class thresholds_t = thr_bv<rle_string_t>
           >
 class ms_pointers : ri::r_index<sparse_bv_type, rle_string_t>
 {
 public:
     thresholds_t thresholds;
+    thr_lce_t thr_lce;
 
     SlpT slp;
 
     int_vector<> samples_start;
-    int_vector<> before_thr_lce; // make class/ds
-    int_vector<> after_thr_lce;  // combine with above?
 
     typedef size_t size_type;
 
@@ -138,7 +139,7 @@ public:
         : ri::r_index<sparse_bv_type, rle_string_t>()
         {}
 
-    void build(const std::string& filename) 
+    void build(const std::string& filename, int bytes = 0) 
     {
         verbose("Building the r-index from BWT");
 
@@ -177,6 +178,7 @@ public:
         verbose("Rate n/r = " , double(this->bwt.size()) / this->r);
         verbose("log2(r) = " , log2(double(this->r)));
         verbose("log2(n/r) = " , log2(double(this->bwt.size()) / this->r));
+        verbose("log2(n) = " , log_n);
 
         read_samples(filename + ".ssa", this->r, n, samples_start);
         read_samples(filename + ".esa", this->r, n, this->samples_last);
@@ -193,27 +195,7 @@ public:
         verbose("bwt length: ", this->bwt.size());
 
         thresholds = thresholds_t(filename, &this->bwt);
-
-        verbose("Reading threshold/boundary LCEs");
-        std::ifstream ifs_thr_lce(filename + ".thr_lce");
-
-        before_thr_lce = int_vector<>(this->r, 0, log_n);
-        after_thr_lce = int_vector<>(this->r, 0, log_n);
-
-        size_t i = 0;
-        while (!ifs_thr_lce.eof())
-        {
-            uint64_t before_lce = 0;
-            uint64_t after_lce = 0;
-
-            ifs_thr_lce.read((char *)&before_lce, THRBYTES);
-            before_thr_lce[i] = before_lce;
-
-            ifs_thr_lce.read((char *)&after_lce, THRBYTES);
-            after_thr_lce[i] = after_lce;
-
-            ++i;
-        }
+        thr_lce = thr_lce_t(filename, &this->bwt, bytes*8);
 
         verbose("finished augmented thresholds construction");
     }
@@ -465,8 +447,8 @@ public:
 					        sa0 = this->bwt.select(rank-1, c);
 					        DCHECK_LT(sa0, pos);
 
-                            const size_t preceding_thr_lce = before_thr_lce[run1];
-                            if (last_len <= preceding_thr_lce) 
+                            //const size_t preceding_thr_lce = before_thr_lce[run1];
+                            if (thr_lce.skip_preceding_lce(run1, last_len)) 
                             {
                                 DCHECK_GT(rank, 0);
 
@@ -490,8 +472,8 @@ public:
                         }
                         else 
                         {
-                            const size_t succeeding_thr_lce = after_thr_lce[run1];
-                            if (last_len <= succeeding_thr_lce)
+                            //const size_t succeeding_thr_lce = after_thr_lce[run1];
+                            if (thr_lce.skip_succeeding_lce(run1, last_len))
                             {
                                 DCHECK_LT(rank, number_of_runs_of_c);
                                 
@@ -782,8 +764,8 @@ public:
                             sa0 = this->bwt.select(rank-1, c);
 					        DCHECK_LT(sa0, pos);
 
-                            const size_t preceding_thr_lce = before_thr_lce[run1];
-                            if (last_len <= preceding_thr_lce) 
+                            //const size_t preceding_thr_lce = before_thr_lce[run1];
+                            if (thr_lce.skip_preceding_lce(run1, last_len)) 
                             {
                                 DCHECK_GT(rank, 0);
 
@@ -807,8 +789,8 @@ public:
                         }
                         else 
                         {
-                            const size_t succeeding_thr_lce = after_thr_lce[run1];
-                            if (last_len <= succeeding_thr_lce) 
+                            //const size_t succeeding_thr_lce = after_thr_lce[run1];
+                            if (thr_lce.skip_succeeding_lce(run1, last_len)) 
                             {
                                 DCHECK_LT(rank, number_of_runs_of_c);
                                 
@@ -832,54 +814,7 @@ public:
                             We have thresholds, so don't need to ever compute both LCEs like Phoni (we skip this code)
                             Similarly, no distance heuristic
                         */
-
-
-// 						const Triplet a = compute_preceding_lce();
-// 						const Triplet b = compute_succeeding_lce();
-// 						if(a.len < b.len) { return b; }
-// 						return a;
-// 					}
-// #else //NAIVE_LCE_SCHEDULE
-// #ifdef SORT_BY_DISTANCE_HEURISTIC
-// 					//! give priority to the LCE with the closer BWT position 
-// 					if(pos - sa0 < sa1 - pos) {
-// #else
-// 					//! always evaluate the LCE with the preceding BWT position first
-// 					if(true) {
-// #endif//SORT_BY_DISTANCE_HEURISTIC
-// 						auto eval_first = &compute_preceding_lce;
-// 						auto eval_second = &compute_succeeding_lce;
-// 						const Triplet a = (*eval_first)();
-// 						if(last_len <= a.len) {
-// 							#ifdef MEASURE_TIME
-// 							++count_lce_skips;
-// 							#endif
-// 							return a;
-// 						} 
-// 						const Triplet b = (*eval_second)();
-// 						if(b.len > a.len) { return b; }
-// 						return a;
-// 					} 
-// 					auto eval_first = &compute_succeeding_lce;
-// 					auto eval_second = &compute_preceding_lce;
-// 					const Triplet a = (*eval_first)();
-// 					if(last_len <= a.len) {
-// 						#ifdef MEASURE_TIME
-// 						++count_lce_skips;
-// 						#endif
-// 						return a;
-// 					} 
-// 					const Triplet b = (*eval_second)();
-// 					if(b.len > a.len) { return b; }
-// 					return a;
-// #endif //NAIVE_LCE_SCHEDULE
 				}();
-
-                // if(len0 < len1) {
-                //     len0 = len1;
-                //     ref0 = ref1;
-                //     sa0 = sa1;
-                // }
                     
 				DCHECK_GT(jump.ref, 0);
                 ON_DEBUG(ms_lengths[m-i-1] = 1 + jump.len);
@@ -946,8 +881,7 @@ public:
 
         written_bytes += thresholds.serialize(out, child, "thresholds");
 
-        written_bytes += before_thr_lce.serialize(out, child, "before_thr_lce");
-        written_bytes += after_thr_lce.serialize(out, child, "after_thr_lce");
+        written_bytes += thr_lce.serialize(out, child, "thr_lce");
 
         sdsl::structure_tree::add_size(child, written_bytes);
         return written_bytes;
@@ -966,9 +900,7 @@ public:
         this->samples_start.load(in);
 
         thresholds.load(in, &this->bwt);
-        
-        before_thr_lce.load(in);
-        after_thr_lce.load(in);
+        thr_lce.load(in, &this->bwt);
         
         load_grammar(filename);
     }

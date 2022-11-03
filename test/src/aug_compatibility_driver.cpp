@@ -156,13 +156,22 @@ int main(int argc, char *const argv[]) {
 
   verbose("Memory peak: ", malloc_count_peak());
 
-  if(args.grammar == "naive") {
-  verbose("using naive grammar");
-  run<ms_pointers<PlainSlp<var_t, Fblc, Fblc>> >(args);
-  } else {
-  verbose("using default grammar");
-  run<ms_pointers<> >(args);
-    }
+  if(args.grammar == "naive" && args.thr_lce == "plain") {
+    verbose("using naive grammar and default threshold lce");
+    run<ms_pointers<PlainSlp<var_t, Fblc, Fblc>> >(args);
+  } else if (args.grammar == "naive" && args.thr_lce == "compressed"){
+    verbose("using naive grammar and compressed threshold lce");
+    run<ms_pointers<PlainSlp<var_t, Fblc, Fblc>, ms_rle_string_sd, thr_lce_bv<>> >(args);
+  }
+  else if (args.thr_lce == "compressed") 
+  {
+    verbose("using default grammar and compressed threshold lce");
+    run<ms_pointers<SelfShapedSlp<var_t, DagcSd, DagcSd, SelSd>, ms_rle_string_sd, thr_lce_bv<>> >(args);
+  }
+  else {
+    verbose("using default grammar and default threshold lce");
+    run<ms_pointers<> >(args);
+  }
 
 
   auto mem_peak = malloc_count_peak();
