@@ -195,7 +195,7 @@ public:
         verbose("bwt length: ", this->bwt.size());
 
         thresholds = thresholds_t(filename, &this->bwt);
-        thr_lce = thr_lce_t(filename, &this->bwt, bytes*8);
+        thr_lce = thr_lce_t(filename, &this->bwt, bytes);
 
         verbose("finished augmented thresholds construction");
     }

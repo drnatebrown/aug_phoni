@@ -30,6 +30,7 @@
 
 #include <sdsl/rmq_support.hpp>
 #include <sdsl/int_vector.hpp>
+#include <sdsl/dac_vector.hpp>
 
 #include <ms_rle_string.hpp>
 
@@ -520,6 +521,341 @@ public:
     std::string get_file_extension() const
     {
         return ".thr_lce_bv_ds";
+    }
+};
+
+template <class rle_string_t = ms_rle_string_sd,
+          class vec_t = dac_vector_dp<> >
+class thr_lce_dac
+{
+public:
+    vec_t before_thr_lce;
+    vec_t after_thr_lce;
+
+    rle_string_t *bwt;
+
+    typedef size_t size_type;
+
+    thr_lce_dac()
+    {
+        bwt=nullptr;
+    }
+
+    thr_lce_dac(std::string filename, rle_string_t* bwt_, int bytes = 0):bwt(bwt_)
+    {
+        verbose("Reading threshold/boundary LCE values from file");
+
+        std::chrono::high_resolution_clock::time_point t_insert_start = std::chrono::high_resolution_clock::now();
+
+        std::string tmp_filename = filename + std::string(".thr_lce");
+
+        struct stat filestat;
+        FILE *fd;
+
+        if ((fd = fopen(tmp_filename.c_str(), "r")) == nullptr)
+            error("open() file " + tmp_filename + " failed");
+
+        int fn = fileno(fd);
+        if (fstat(fn, &filestat) < 0)
+            error("stat() file " + tmp_filename + " failed");
+
+        if (filestat.st_size % THRBYTES != 0)
+            error("invalid file " + tmp_filename);
+
+        assert(filestat.st_size / THRBYTES == 2*bwt->number_of_runs());
+        size_t length = bwt->number_of_runs();
+
+        std::vector<ulint> before_vals = std::vector<ulint>(length, 0);
+        std::vector<ulint> after_vals = std::vector<ulint>(length, 0);
+
+        for (size_t i = 0; i < length; ++i)
+        {
+            size_t before_lce = 0;
+            size_t after_lce = 0;
+
+            if ((fread(&before_lce, THRBYTES, 1, fd)) != 1)
+                error("fread() file " + tmp_filename + " failed");
+            if ((fread(&after_lce, THRBYTES, 1, fd)) != 1)
+                error("fread() file " + tmp_filename + " failed");
+
+            before_vals[i] = before_lce;
+            after_vals[i] = after_lce;
+        }
+
+        before_thr_lce = vec_t(before_vals);
+        after_thr_lce = vec_t(after_vals);
+
+        fclose(fd);
+
+        std::chrono::high_resolution_clock::time_point t_insert_end = std::chrono::high_resolution_clock::now();
+
+        //verbose("Memory peak: ", malloc_count_peak());
+        verbose("Elapsed time (s): ", std::chrono::duration<double, std::ratio<1>>(t_insert_end - t_insert_start).count());
+    }
+
+    // Destructor
+    ~thr_lce_dac() 
+    {
+       // NtD
+    }
+
+    // Copy constructor
+    thr_lce_dac(const thr_lce_dac &other)
+        :before_thr_lce(other.before_thr_lce),
+        after_thr_lce(other.after_thr_lce),
+        bwt(other.bwt)
+    {
+    }
+
+    friend void swap(thr_lce_dac &first, thr_lce_dac &second) // nothrow
+    {
+        using std::swap;
+
+        swap(first.before_thr_lce, second.before_thr_lce);
+        swap(first.after_thr_lce, second.after_thr_lce);
+        swap(first.bwt, second.bwt);
+    }
+
+    // Copy assignment
+    thr_lce_dac &operator=(thr_lce_dac other) 
+    {
+        swap(*this,other);
+        
+        return *this;
+    }
+
+    // Move constructor
+    thr_lce_dac(thr_lce_dac &&other) noexcept
+        : thr_lce_dac()
+    {
+        swap(*this, other);
+    }
+
+    bool skip_preceding_lce(const size_t run, const size_t length)
+    {
+        return length <= before_thr_lce[run];
+    }
+
+    bool skip_succeeding_lce(const size_t run, const size_t length)
+    {
+        return length <= after_thr_lce[run];
+    }
+
+    /* serialize the structure to the ostream
+     * \param out     the ostream
+     */
+    size_type serialize(std::ostream &out, sdsl::structure_tree_node *v = nullptr, std::string name = "") // const
+    {
+        sdsl::structure_tree_node *child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
+        size_type written_bytes = 0;
+
+        written_bytes += before_thr_lce.serialize(out, child, "before_thr_lce");
+        written_bytes += after_thr_lce.serialize(out, child, "after_thr_lce");
+
+        sdsl::structure_tree::add_size(child, written_bytes);
+        return written_bytes;
+    }
+
+    /* load the structure from the istream
+     * \param in the istream
+     */
+    void load(std::istream &in, rle_string_t *bwt_)
+    {
+        before_thr_lce.load(in);
+        after_thr_lce.load(in);
+
+        bwt = bwt_;
+    }
+
+    std::string get_file_extension() const
+    {
+        return ".thr_lce_dac_ds";
+    }
+};
+
+// TODO: Add template for vector
+template <class rle_string_t = ms_rle_string_sd,
+          class vec_t = dac_vector_dp<>, 
+          class bv_t = sd_vector<> >
+class thr_lce_bv_dac
+{
+public:
+    rank_bv<bv_t> preceding_stored; // we mark non zero positions, and those below overflow
+    rank_bv<bv_t> succeeding_stored; // we mark non zero positions, and those below overflow
+
+    vec_t before_thr_lce;
+    vec_t after_thr_lce;
+
+    rle_string_t *bwt;
+
+    typedef size_t size_type;
+
+    thr_lce_bv_dac()
+    {
+        bwt=nullptr;
+    }
+
+    thr_lce_bv_dac(std::string filename, rle_string_t* bwt_, int bytes = 0):bwt(bwt_)
+    {
+        verbose("Reading threshold/boundary LCE values from file");
+
+        std::chrono::high_resolution_clock::time_point t_insert_start = std::chrono::high_resolution_clock::now();
+
+        std::vector<ulint> stored_thr_lce_before = std::vector<ulint>();
+        std::vector<ulint> stored_thr_lce_after = std::vector<ulint>();
+
+        std::string tmp_filename = filename + std::string(".thr_lce");
+
+        struct stat filestat;
+        FILE *fd;
+
+        if ((fd = fopen(tmp_filename.c_str(), "r")) == nullptr)
+            error("open() file " + tmp_filename + " failed");
+
+        int fn = fileno(fd);
+        if (fstat(fn, &filestat) < 0)
+            error("stat() file " + tmp_filename + " failed");
+
+        if (filestat.st_size % THRBYTES != 0)
+            error("invalid file " + tmp_filename);
+
+        assert(filestat.st_size / THRBYTES == 2*bwt->number_of_runs());
+        size_t length = bwt->number_of_runs();
+
+        std::vector<bool> stored_positions_before(length, false);
+        std::vector<bool> stored_positions_after(length, false);
+
+        for (size_t i = 0; i < length; ++i)
+        {
+            size_t before_lce = 0;
+            size_t after_lce = 0;
+
+            if ((fread(&before_lce, THRBYTES, 1, fd)) != 1)
+                error("fread() file " + tmp_filename + " failed");
+            if ((fread(&after_lce, THRBYTES, 1, fd)) != 1)
+                error("fread() file " + tmp_filename + " failed");
+
+            if (before_lce > 0)
+            {
+                stored_thr_lce_before.push_back(before_lce);
+                stored_positions_before[i] = true;
+            }
+
+            if (after_lce > 0)
+            {
+                stored_thr_lce_after.push_back(after_lce);
+                stored_positions_after[i] = true;
+            }
+        }
+
+        fclose(fd);
+
+        before_thr_lce = vec_t(stored_thr_lce_before);
+        preceding_stored = rank_bv<>(stored_positions_before);
+        assert(preceding_stored.rank(stored_positions_before.size()) == stored_thr_lce_before.size());
+
+        after_thr_lce = vec_t(stored_thr_lce_after);
+        succeeding_stored = rank_bv<>(stored_positions_after);
+        assert(succeeding_stored.rank(stored_positions_after.size()) == stored_thr_lce_after.size());
+
+        std::chrono::high_resolution_clock::time_point t_insert_end = std::chrono::high_resolution_clock::now();
+
+        //verbose("Memory peak: ", malloc_count_peak());
+        verbose("Elapsed time (s): ", std::chrono::duration<double, std::ratio<1>>(t_insert_end - t_insert_start).count());
+    }
+
+    // Destructor
+    ~thr_lce_bv_dac() 
+    {
+       // NtD
+    }
+
+    // Copy constructor
+    thr_lce_bv_dac(const thr_lce_bv_dac &other)
+        :before_thr_lce(other.before_thr_lce),
+        after_thr_lce(other.after_thr_lce),
+        preceding_stored(other.preceding_stored),
+        succeeding_stored(other.succeeding_stored),
+        bwt(other.bwt)
+    {
+    }
+
+    friend void swap(thr_lce_bv_dac &first, thr_lce_bv_dac &second) // nothrow
+    {
+        using std::swap;
+
+        swap(first.before_thr_lce, second.before_thr_lce);
+        swap(first.after_thr_lce, second.after_thr_lce);
+        swap(first.preceding_stored, second.preceding_stored);
+        swap(first.succeeding_stored, second.succeeding_stored);
+        swap(first.bwt, second.bwt);
+    }
+
+    // Copy assignment
+    thr_lce_bv_dac &operator=(thr_lce_bv_dac other) 
+    {
+        swap(*this,other);
+        
+        return *this;
+    }
+
+    // Move constructor
+    thr_lce_bv_dac(thr_lce_bv_dac &&other) noexcept
+        : thr_lce_bv_dac()
+    {
+        swap(*this, other);
+    }
+
+    bool skip_preceding_lce(size_t run, size_t length)
+    {
+        if (!preceding_stored[run]) return false;
+
+        size_t lce_idx = preceding_stored.rank(run);
+        return length <= before_thr_lce[lce_idx];
+    }
+
+    bool skip_succeeding_lce(size_t run, size_t length)
+    {
+        if (!succeeding_stored[run]) return false;
+
+        size_t lce_idx = succeeding_stored.rank(run);
+        return length <= after_thr_lce[lce_idx];
+    }
+
+    /* serialize the structure to the ostream
+     * \param out     the ostream
+     */
+    size_type serialize(std::ostream &out, sdsl::structure_tree_node *v = nullptr, std::string name = "") // const
+    {
+        sdsl::structure_tree_node *child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
+        size_type written_bytes = 0;
+
+        written_bytes += before_thr_lce.serialize(out, child, "before_thr_lce");
+        written_bytes += after_thr_lce.serialize(out, child, "after_thr_lce");
+
+        written_bytes += preceding_stored.serialize(out, child, "preceding_stored");
+        written_bytes += succeeding_stored.serialize(out, child, "succeeding_stored");
+
+        sdsl::structure_tree::add_size(child, written_bytes);
+        return written_bytes;
+    }
+
+    /* load the structure from the istream
+     * \param in the istream
+     */
+    void load(std::istream &in, rle_string_t *bwt_)
+    {
+        before_thr_lce.load(in);
+        after_thr_lce.load(in);
+        
+        preceding_stored.load(in);
+        succeeding_stored.load(in);
+        bwt = bwt_;
+    }
+
+    std::string get_file_extension() const
+    {
+        return ".thr_lce_bv_dac_ds";
     }
 };
 

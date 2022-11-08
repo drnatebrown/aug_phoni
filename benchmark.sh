@@ -16,7 +16,7 @@ function die {
 ######################
 
 # TODO: the text datasets we want to index: 
-datasets=(chr19.1.fa chr19.16.fa chr19.32.fa chr19.64.fa chr19.100.fa chr19.128.fa chr19.256.fa  chr19.512.fa chr19.1000.fa)
+datasets=(chr19.16.fa chr19.32.fa chr19.64.fa chr19.128.fa chr19.256.fa chr19.512.fa chr19.1000.fa)
 
 # TODO: add here your hostname and change the variables such that the programs for the evaluation can be found
 if [[ $(hostname) = "shannon" ]]; then
@@ -239,7 +239,7 @@ if [[ ! -e ${dataset}.C ]]; then
 fi
 
 
-if [[ ! -e $dataset.phoni ]]; then
+#if [[ ! -e $dataset.phoni ]]; then
 	logFile=$LOG_DIR/$filename.phonibuild.log
 	stats="$basestats type=phonibuild "
 	set -x
@@ -248,7 +248,7 @@ if [[ ! -e $dataset.phoni ]]; then
 	echo -n "$stats"
 	echo -n "phonisize=$(stat --format="%s" $dataset.phoni) "
 	$readlog_prg $logFile
-fi
+#fi
 
 # BUILD AUG PHONI
 
@@ -306,48 +306,76 @@ for phoni_param in 'none' 'solca' 'solcanaive' 'naive'; do
 	echo -n "slpsize=$(stat --format="%s" $slpfilename) "
 	$readlog_prg $logFile
 
-	# # Regular PHONI
-    # logFile=$LOG_DIR/$filename.phoni.log
-    # stats="$basestats type=phoni param=${phoni_param} "
-    # set -x
-    # Time $phoni_prg -f "$dataset" $(echo ${phoniexecparam}) -p ${PATTERN_FILE}  > "$logFile" 2>&1
-    # set +x
-    # echo -n "$stats"
-    # $readlog_prg $logFile
-    # cp ${PATTERN_FILE}.lengths $LOG_DIR/$filename.phoni.${phoni_param}.lengths
-    # cp ${PATTERN_FILE}.pointers  $LOG_DIR/$filename.phoni.${phoni_param}.pointers
+	# Regular PHONI
+    logFile=$LOG_DIR/$filename.phoni.log
+    stats="$basestats type=phoni param=${phoni_param} "
+    set -x
+    Time $phoni_prg -f "$dataset" $(echo ${phoniexecparam}) -p ${PATTERN_FILE}  > "$logFile" 2>&1
+    set +x
+    echo -n "$stats"
+    $readlog_prg $logFile
 
+	cp ${PATTERN_FILE}.lengths $LOG_DIR/$filename.phoni.${phoni_param}.lengths
+	cp ${PATTERN_FILE}.pointers  $LOG_DIR/$filename.phoni.${phoni_param}.pointers
 
-	for aug_param in 'plain' 'compressed'; do
-		logFile=$LOG_DIR/$filename.augbuild.log
-		stats="$basestats type=augbuild param=$aug_param "
-		set -x
-		Time $augbuild_prg -f -t $(echo ${aug_param}) -b 0 "$dataset" > "$logFile" 2>&1
-		set +x
-		echo -n "$stats"
-		echo -n "augsize=$(stat --format="%s" $dataset.aug) "
-		$readlog_prg $logFile
+	for aug_param in 'plain' 'bv' 'dac' 'dac_bv'; do
+		if [[ $aug_param = 'plain' ]] || [[ $aug_param = 'bv' ]]; then
+			for byte_size in "0" "1"; do
+				logFile=$LOG_DIR/$filename.augbuild.log
+				stats="$basestats type=augbuild aug_param=${aug_param} byte_size=${byte_size} "
+				set -x
+				Time $augbuild_prg -f -t $(echo ${aug_param}) -b "$byte_size" "$dataset" > "$logFile" 2>&1
+				set +x
+				echo -n "$stats"
+				echo -n "augsize=$(stat --format="%s" $dataset.aug) "
+				$readlog_prg $logFile
 
-		# Augmented PHONI
-		logFile=$LOG_DIR/$filename.aug.log
-		stats="$basestats type=aug param=${phoni_param} "
-		set -x
-		Time $aug_prg -f "$dataset" $(echo ${phoniexecparam}) -t $(echo ${aug_param}) -p ${PATTERN_FILE}  > "$logFile" 2>&1
-		set +x
-		echo -n "$stats"
-		$readlog_prg $logFile
-		cp ${PATTERN_FILE}.lengths $LOG_DIR/$filename.aug.${phoni_param}.${aug_param}.lengths
-		cp ${PATTERN_FILE}.pointers  $LOG_DIR/$filename.aug.${phoni_param}.${aug_param}.pointers
+				# Augmented PHONI
+				logFile=$LOG_DIR/$filename.aug.log
+				stats="$basestats type=aug param=${phoni_param} aug_param=${aug_param} byte_size=${byte_size} "
+				set -x
+				Time $aug_prg -f "$dataset" $(echo ${phoniexecparam}) -t $(echo ${aug_param}) -p ${PATTERN_FILE}  > "$logFile" 2>&1
+				set +x
+				echo -n "$stats"
+				$readlog_prg $logFile
 
-		echo -n "$basestats type=mscheck_aug param=${aug_param} "
-		echo "check=\"$(diff -q $LOG_DIR/$filename.phoni.none.lengths $LOG_DIR/$filename.aug.${phoni_param}.${aug_param}.lengths)\""
+				cp ${PATTERN_FILE}.lengths $LOG_DIR/$filename.aug.${phoni_param}.${aug_param}.lengths
+				cp ${PATTERN_FILE}.pointers  $LOG_DIR/$filename.aug.${phoni_param}.${aug_param}.pointers
+
+				echo -n "$basestats type=mscheck_aug param=${aug_param} "
+				echo "check=\"$(diff -q $LOG_DIR/$filename.phoni.none.lengths $LOG_DIR/$filename.aug.${phoni_param}.${aug_param}.lengths)\""
+			done
+		else
+			logFile=$LOG_DIR/$filename.augbuild.log
+			stats="$basestats type=augbuild aug_param=$aug_param byte_size=0 "
+			set -x
+			Time $augbuild_prg -f -t $(echo ${aug_param}) "$dataset" > "$logFile" 2>&1
+			set +x
+			echo -n "$stats"
+			echo -n "augsize=$(stat --format="%s" $dataset.aug) "
+			$readlog_prg $logFile
+
+			# Augmented PHONI
+			logFile=$LOG_DIR/$filename.aug.log
+			stats="$basestats type=aug param=${phoni_param} aug_param=${aug_param} "
+			set -x
+			Time $aug_prg -f "$dataset" $(echo ${phoniexecparam}) -t $(echo ${aug_param}) -p ${PATTERN_FILE}  > "$logFile" 2>&1
+			set +x
+			echo -n "$stats"
+			$readlog_prg $logFile
+
+			cp ${PATTERN_FILE}.lengths $LOG_DIR/$filename.aug.${phoni_param}.${aug_param}.lengths
+			cp ${PATTERN_FILE}.pointers  $LOG_DIR/$filename.aug.${phoni_param}.${aug_param}.pointers
+
+			echo -n "$basestats type=mscheck_aug param=${aug_param} "
+			echo "check=\"$(diff -q $LOG_DIR/$filename.phoni.none.lengths $LOG_DIR/$filename.aug.${phoni_param}.${aug_param}.lengths)\""
+		fi
 	done
 
-    # if [[ $phoni_param != 'none' ]]; then
-	#     echo -n "$basestats type=mscheck_phoni param=${phoni_param} "
-	#     echo "check=\"$(diff -q $LOG_DIR/$filename.phoni.none.lengths $LOG_DIR/$filename.phoni.${phoni_param}.lengths)\""
-    # fi
-
+    if [[ $phoni_param != 'none' ]]; then
+	    echo -n "$basestats type=mscheck_phoni param=${phoni_param} "
+	    echo "check=\"$(diff -q $LOG_DIR/$filename.phoni.none.lengths $LOG_DIR/$filename.phoni.${phoni_param}.lengths)\""
+    fi
 
  done # for phoni_param
 
