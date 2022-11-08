@@ -230,6 +230,7 @@ public:
     std::vector<size_t> query(const std::vector<uint8_t> &pattern)
     {
         size_t m = pattern.size();
+        verbose("Pattern length: ", m);
 
         std::vector<size_t> ms_pointers(m);
 

@@ -146,14 +146,14 @@ int main(int argc, char *const argv[])
   verbose("Processing patterns");
   t_insert_start = std::chrono::high_resolution_clock::now();
 
-  std::ofstream f_pointers(args.patterns + ".pointers");
-  std::ofstream f_lengths(args.patterns + ".lengths");
+  std::ofstream f_pointers(args.patterns + ".pointers.rle");
+  std::ofstream f_lengths(args.patterns + ".lengths.rle");
 
   if (!f_pointers.is_open())
-    error("open() file " + std::string(args.filename) + ".pointers failed");
+    error("open() file " + std::string(args.filename) + ".pointers.rle failed");
 
   if (!f_lengths.is_open())
-    error("open() file " + std::string(args.filename) + ".lengths failed");
+    error("open() file " + std::string(args.filename) + ".lengths.rle failed");
 
   for (auto pattern : patterns)
   {
