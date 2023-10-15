@@ -31,35 +31,35 @@ make
 
 ### Building the index
 
-To *build* the index we use the command `phoni build` from the build directory.
+To *build* the index we use the command `aug build` from the build directory. Alternatively, replace `aug` with `phoni` to build the version without augmented thresholds.
 
 ``` console
-phoni build \
+aug build \
 -r <filename of the reference> \
 -t <number of threads> \
 -g <grammar format> \
 -f <input file is a fasta file> \
 ```
-For example, to build the phoni index for the file `yeast.fasta` using 4 `threads` and the `plain` grammar we run from the `build` folder:
+For example, to build the aug-phoni index for the file `yeast.fasta` using 4 `threads` and the `plain` grammar we run from the `build` folder:
 ``` conole
-python3 phoni build -r ../data/yeast.fasta -f -t 4 -g plain
+python3 aug build -r ../data/yeast.fasta -f -t 4 -g plain
 ```
 
-This command will produce `yeast.fasta.phoni` and `yeast.fasta.plain.slp` in the `data` folder, which represent the `phoni` index.
+This command will produce `yeast.fasta.aug` and `yeast.fasta.plain.slp` in the `data` folder, which represent the `aug-phoni` index.
 
 ### Querying the index
 
-To *query* the index we use the command `phoni query` from the build directory.
+To *query* the index we use the command `aug query` from the build directory. We replace `aug` with `phoni` to instead run without augmented, assuming PHONI was also built.
 
 ``` console
-phoni ms \
+aug ms \
 -r <filename of the reference> \
 -p <number of threads> \
 -g <grammar format> \
 ```
 For example, to query the phoni index for the file `yeast.fasta` using the `plain` grammar with the pattern `samples.fastq` we run from the `build` folder:
-``` conole
-python3 phoni build -r ../data/yeast.fasta -p ../data/samples.fa -g plain
+``` console
+python3 aug build -r ../data/yeast.fasta -p ../data/samples.fa -g plain
 ```
 
 This command will produce `samples.fa.positions` and `samples.fa.lengths` in the `data` folder, which represent the matching staistics *positions* and *lengths* of `samples.fa` against `yeast.fasta`, respectively.
