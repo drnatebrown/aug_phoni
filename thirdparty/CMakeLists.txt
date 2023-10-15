@@ -1,5 +1,34 @@
 include(FetchContent)
 
+## Add klib
+FetchContent_Declare(
+  klib
+  GIT_REPOSITORY https://github.com/drnatebrown/klib
+)
+
+FetchContent_GetProperties(klib)
+if(NOT klib_POPULATED)
+  FetchContent_Populate(klib)
+  
+  add_library(klib INTERFACE)
+
+  target_include_directories(klib INTERFACE ${klib_SOURCE_DIR})
+endif()
+
+# Add pfp-thresholds
+ FetchContent_Declare(
+   pfp_thresholds
+   GIT_REPOSITORY https://github.com/drnatebrown/pfp-thresholds
+   GIT_TAG master
+   )
+  
+FetchContent_GetProperties(pfp_thresholds)
+if(NOT pfp_thresholds_POPULATED)
+  FetchContent_Populate(pfp_thresholds)
+  add_subdirectory(${pfp_thresholds_SOURCE_DIR} ${pfp_thresholds_BINARY_DIR})
+  
+endif()
+
 ## Add malloc_count
 FetchContent_Declare(
   malloc_count
@@ -64,7 +93,7 @@ endif()
 FetchContent_Declare(
   benchmark
   GIT_REPOSITORY https://github.com/google/benchmark.git
-  GIT_TAG        master
+  GIT_TAG        main
   )
   
 FetchContent_GetProperties(benchmark)
@@ -183,20 +212,6 @@ if(NOT r-index_POPULATED)
   add_library(ri INTERFACE)
   target_link_libraries(ri INTERFACE klib z)
   target_include_directories(ri INTERFACE ${r-index_SOURCE_DIR}/internal)
-endif()
-
-# Add pfp-thresholds
- FetchContent_Declare(
-   pfp_thresholds
-   GIT_REPOSITORY https://github.com/maxrossi91/pfp-thresholds
-   GIT_TAG develop
-   )
-  
-FetchContent_GetProperties(pfp_thresholds)
-if(NOT pfp_thresholds_POPULATED)
-  FetchContent_Populate(pfp_thresholds)
-  add_subdirectory(${pfp_thresholds_SOURCE_DIR} ${pfp_thresholds_BINARY_DIR})
-  
 endif()
 
 ## Add bigrepair
