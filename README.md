@@ -67,6 +67,7 @@ This command will produce `samples.fa.positions` and `samples.fa.lengths` in the
 ### Benchmarks
 
 We provide a script and benchmark files to evaluate Aug PHONI described in the paper:
+
 C. Martínez-Guardiola, N. K. Brown, F. Silva-Coira, D. Köppl, T. Gagie and S. Ladra, "Augmented Thresholds for MONI," 2023 Data Compression Conference (DCC), Snowbird, UT, USA, 2023, pp. 268-277, doi: 10.1109/DCC55655.2023.00035.
 
 In our experiments we used the file
