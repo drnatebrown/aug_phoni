@@ -1,5 +1,5 @@
 # Augmented Thresholds for MONI
-See PHONI: https://github.com/koeppl/phoni
+See PHONI, which this method is a variant of: https://github.com/koeppl/phoni
 
 Modified version of one-pass MONI using runs compressed BWT index to generate matching statistics for a pattern. Uses threshold LCE trade-off as described in [Augmented Thresholds for MONI](10.1109/DCC55655.2023.00035). Cite this paper if you use this tool
 
@@ -18,7 +18,7 @@ We need the following python 3 packages for extracting and concatenating `.fa` f
 
 
 ```console
-git clone --branch phoni https://github.com/koeppl/phoni
+git clone --branch phoni https://github.com/drnatebrown/phoni
 ```
 
 ### Compile
