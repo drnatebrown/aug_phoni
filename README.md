@@ -57,7 +57,7 @@ aug ms \
 -p <number of threads> \
 -g <grammar format> \
 ```
-For example, to query the phoni index for the file `yeast.fasta` using the `plain` grammar with the pattern `samples.fastq` we run from the `build` folder:
+For example, to query the phoni index for the file `yeast.fasta` using the `plain` grammar with the pattern `samples.fa` we run from the `build` folder:
 ``` console
 python3 aug build -r ../data/yeast.fasta -p ../data/samples.fa -g plain
 ```
