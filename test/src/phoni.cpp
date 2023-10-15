@@ -157,7 +157,7 @@ int main(int argc, char *const argv[]) {
 
   verbose("Memory peak: ", malloc_count_peak());
 
-  if(args.grammar == "naive") {
+  if(args.grammar == "naive" || args.grammar == "plain") {
   verbose("using naive grammar");
   run<ms_pointers<PlainSlp<var_t, Fblc, Fblc>> >(args);
   } else {
