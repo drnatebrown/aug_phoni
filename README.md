@@ -59,7 +59,7 @@ aug ms \
 ```
 For example, to query the phoni index for the file `yeast.fa` using the `plain` grammar with the pattern `samples.fa` we run from the `build` folder:
 ``` console
-python3 aug ms -r ../data/yeast.fa -p ../data/samples.fa -g plain
+python3 aug ms -i ../data/yeast.fa -p ../data/samples.fa -g plain
 ```
 
 This command will produce `samples.fa.positions` and `samples.fa.lengths` in the `data` folder, which represent the matching staistics *positions* and *lengths* of `samples.fa` against `yeast.fa`, respectively.
