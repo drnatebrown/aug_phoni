@@ -40,12 +40,12 @@ aug build \
 -g <grammar format> \
 -f <input file is a fasta file> \
 ```
-For example, to build the aug-phoni index for the file `yeast.fasta` using 4 `threads` and the `plain` grammar we run from the `build` folder:
+For example, to build the aug-phoni index for the file `yeast.fa` using 4 `threads` and the `naive` grammar we run from the `build` folder:
 ``` conole
-python3 aug build -r ../data/yeast.fasta -f -t 4 -g plain
+python3 aug build -r ../data/yeast.fa -f -t 4 -g naive
 ```
 
-This command will produce `yeast.fasta.aug` and `yeast.fasta.plain.slp` in the `data` folder, which represent the `aug-phoni` index.
+This command will produce `yeast.fa.aug` and `yeast.fa.plain.slp` in the `data` folder, which represent the `aug-phoni` index.
 
 ### Querying the index
 
@@ -53,16 +53,16 @@ To *query* the index we use the command `aug query` from the build directory. We
 
 ``` console
 aug ms \
--r <filename of the reference> \
--p <number of threads> \
+-i <filename of the reference> \
+-p <fasta pattern file> \
 -g <grammar format> \
 ```
-For example, to query the phoni index for the file `yeast.fasta` using the `plain` grammar with the pattern `samples.fa` we run from the `build` folder:
+For example, to query the phoni index for the file `yeast.fa` using the `naive` grammar with the pattern `samples.fa` we run from the `build` folder:
 ``` console
-python3 aug build -r ../data/yeast.fasta -p ../data/samples.fa -g plain
+python3 aug build -r ../data/yeast.fa -p ../data/samples.fa -g plain
 ```
 
-This command will produce `samples.fa.positions` and `samples.fa.lengths` in the `data` folder, which represent the matching staistics *positions* and *lengths* of `samples.fa` against `yeast.fasta`, respectively.
+This command will produce `samples.fa.positions` and `samples.fa.lengths` in the `data` folder, which represent the matching staistics *positions* and *lengths* of `samples.fa` against `yeast.fa`, respectively.
 
 ### Benchmarks
 
