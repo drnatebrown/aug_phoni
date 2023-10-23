@@ -1,0 +1,18 @@
+#!/bin/bash
+
+in=small_patterns.fa
+
+./build/test/src/phoni ./data/cov.fa -p ./data/$in -g plain
+./build/test/src/aug_phoni_lazy ./data/cov.fa -p ./data/$in -g plain
+
+for f in pointers lengths; do
+    echo -en "$f: "
+    diff ./data/$in.$f ./data/$in.$f.aug
+    es=$?
+    if [ $es -ne 0 ]; then
+        echo "difference found :("
+    else
+        echo "OK!"
+    fi
+done
+
