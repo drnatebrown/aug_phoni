@@ -1,7 +1,7 @@
 # Augmented Thresholds for MONI
 See PHONI, which this method is a variant of: https://github.com/koeppl/phoni
 
-Modified version of one-pass MONI using runs compressed BWT index to generate matching statistics for a pattern. Uses threshold LCE trade-off as described in [Augmented Thresholds for MONI](10.1109/DCC55655.2023.00035). Cite this paper if you use this tool
+Modified version of one-pass MONI using runs compressed BWT index to generate matching statistics for a pattern. Uses threshold LCE trade-off as described in [Augmented Thresholds for MONI](https://doi.org/10.1109/DCC55655.2023.00035). Cite this paper if you use this tool
 
 Requires the same dependencies as PHONI to run all scripts/benchmarks: we borrow their description below modified for differences in running this version.
 ## Preparations
