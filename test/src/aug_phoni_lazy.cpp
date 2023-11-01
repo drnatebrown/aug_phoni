@@ -68,7 +68,7 @@ void run(const Args& args) {
   int l;
   while ((l = kseq_read(seq)) >= 0)
   {
-    auto res = ms.query(seq->seq.s, seq->seq.l);
+    auto res = ms.query(seq->seq.s, seq->seq.l, args.lcp_delay);
 
     size_t q_length = res.first.size();
     fwrite(&q_length, sizeof(size_t), 1, out_fd);

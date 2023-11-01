@@ -29,6 +29,7 @@
 // #define MEASURE_TIME 1  //measure the time for LCE and backward search?
 //#define NAIVE_LCE_SCHEDULE 1 //stupidly execute two LCEs without heurstics
 #include "Common.hpp"
+#include <cstddef>
 #ifndef NAIVE_LCE_SCHEDULE //apply a heuristic
 #define SORT_BY_DISTANCE_HEURISTIC 1 // apply a heuristic to compute the LCE with the closer BWT position first
 #endif
@@ -465,14 +466,14 @@ public:
         return _query(pattern.data(), m);
     }
 
-    std::pair<std::vector<size_t>, std::vector<size_t>> query(const char *pattern, const size_t m)
+    std::pair<std::vector<size_t>, std::vector<size_t>> query(const char *pattern, const size_t m, const size_t lcp_delay)
     {
-        return _query(pattern, m);
+        return _query(pattern, m, lcp_delay);
     }
 
     // Computes the matching statistics pointers for the given pattern
     template <typename string_t>
-    std::pair<std::vector<size_t>, std::vector<size_t>> _query(const string_t &pattern, const size_t m)
+    std::pair<std::vector<size_t>, std::vector<size_t>> _query(const string_t &pattern, const size_t m, const size_t lce_freq)
     {
         auto pattern_at = [&] (const size_t pos) {
             return pattern[pos];
@@ -491,10 +492,7 @@ public:
         size_t last_len;
         size_t last_ref;
 
-        // freq of LCE skipping and a counter for it
-        const size_t lce_freq = 5;
         size_t lce_cnt = 0;
-
         vector<size_t> stored_sample_pos(lce_freq), stored_ptr(lce_freq), stored_run(lce_freq);
         vector<int> stored_it(lce_freq+1, 0);
         vector<bool> direction(lce_freq);

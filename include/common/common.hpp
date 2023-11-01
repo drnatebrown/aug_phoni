@@ -329,6 +329,7 @@ struct Args
   std::string filename = "";
   std::string grammar = "";
   std::string thr_lce = "";
+  size_t lcp_delay = 0; // the number of LCP computations to delay
   size_t w = 10; // sliding window size and its default
   size_t bytes = 0; // number of bytes in thr_lce array to store
   bool store = false; // store the data structure in the file
@@ -345,21 +346,22 @@ void parseArgs(int argc, char *const argv[], Args &arg)
   extern char *optarg;
   extern int optind;
 
-  std::string usage("usage: " + std::string(argv[0]) + " infile [-s store] [-m memo] [-c csv] [-p patterns] [-f fasta] [-r rle] [-g grammar] [-t thr_lce] [-b bytes]\n\n" +
+  std::string usage("usage: " + std::string(argv[0]) + " infile [-s store] [-m memo] [-c csv] [-p patterns] [-f fasta] [-d lcp_delay] [-r rle] [-g grammar] [-t thr_lce] [-b bytes]\n\n" +
                     "Computes the pfp data structures of infile, provided that infile.parse, infile.dict, and infile.occ exists.\n" +
-                    "  wsize: [integer] - sliding window size (def. 10)\n" +
-                    "  store: [boolean] - store the data structure in infile.pfp.ds. (def. false)\n" +
-                    "   memo: [boolean] - print the data structure memory usage. (def. false)\n" +
-                    "  fasta: [boolean] - the input file is a fasta file. (def. false)\n" +
-                    "    rle: [boolean] - output run length encoded BWT. (def. false)\n" +
-                    "pattens: [string]  - path to patterns file.\n" +
-                    "grammar: [string]  - options for the grammar.\n" +
-                    "thr_lce: [string]  - options for storing the thr_lce.\n" +
-                    "  bytes: [integer] - how many bytes for storing the thr_lce.\n" +
-                    "    csv: [boolean] - print the stats in csv form on strerr. (def. false)\n");
+                    "    wsize: [integer] - sliding window size (def. 10)\n" +
+                    "lcp_delay: [integer] - the number of LCPs we delay in the lazy mode (def. 0)\n" +
+                    "    store: [boolean] - store the data structure in infile.pfp.ds. (def. false)\n" +
+                    "     memo: [boolean] - print the data structure memory usage. (def. false)\n" +
+                    "    fasta: [boolean] - the input file is a fasta file. (def. false)\n" +
+                    "      rle: [boolean] - output run length encoded BWT. (def. false)\n" +
+                    "  pattens: [string]  - path to patterns file.\n" +
+                    "  grammar: [string]  - options for the grammar.\n" +
+                    "  thr_lce: [string]  - options for storing the thr_lce.\n" +
+                    "    bytes: [integer] - how many bytes for storing the thr_lce.\n" +
+                    "      csv: [boolean] - print the stats in csv form on strerr. (def. false)\n");
 
   std::string sarg;
-  while ((c = getopt(argc, argv, "w:smcfrhp:g:t:b:")) != -1)
+  while ((c = getopt(argc, argv, "w:smcfrhp:g:t:b:d:")) != -1)
   {
     switch (c)
     {
@@ -381,6 +383,10 @@ void parseArgs(int argc, char *const argv[], Args &arg)
       break;
     case 'p':
       arg.patterns.assign(optarg);
+      break;
+    case 'd':
+      sarg.assign(optarg);
+      arg.lcp_delay = stoi(sarg);
       break;
     case 'g':
       arg.grammar.assign(optarg);
