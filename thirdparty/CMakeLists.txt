@@ -237,8 +237,8 @@ endif()
 ## Add ShapedSlp
 FetchContent_Declare(
   shaped_slp
-  GIT_REPOSITORY https://github.com/koeppl/ShapedSlp
-  GIT_TAG master
+  GIT_REPOSITORY https://github.com/Gogis0/ShapedSlp
+  GIT_TAG match_length_query
   )
   
 FetchContent_GetProperties(shaped_slp)

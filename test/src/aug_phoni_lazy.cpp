@@ -168,7 +168,7 @@ int main(int argc, char *const argv[]) {
   else if (args.thr_lce == "compressed") 
   {
     verbose("using default grammar and compressed threshold lce");
-    run<ms_pointers<SelfShapedSlp<var_t, DagcSd, DagcSd, SelSd>, ms_rle_string_sd, thr_lce_bv<>> >(args);
+    //run<ms_pointers<SelfShapedSlp<var_t, DagcSd, DagcSd, SelSd>, ms_rle_string_sd, thr_lce_bv<>> >(args);
   }
   else if((args.grammar == "naive" || args.grammar == "plain")) {
     verbose("using naive grammar and default threshold lce");

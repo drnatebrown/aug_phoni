@@ -28,6 +28,7 @@
 /** FLAGS **/
 // #define MEASURE_TIME 1  //measure the time for LCE and backward search?
 //#define NAIVE_LCE_SCHEDULE 1 //stupidly execute two LCEs without heurstics
+#include "Common.hpp"
 #ifndef NAIVE_LCE_SCHEDULE //apply a heuristic
 #define SORT_BY_DISTANCE_HEURISTIC 1 // apply a heuristic to compute the LCE with the closer BWT position first
 #endif
@@ -119,7 +120,7 @@ using Vlc128 = VlcVec<sdsl::coder::elias_delta, 128>;
 
 
 template <
-    class SlpT = SelfShapedSlp<var_t, DagcSd, DagcSd, SelSd>,
+    class SlpT = PlainSlp<var_t, Fblc, Fblc>,
     class rle_string_t = ms_rle_string_sd,
     class thr_lce_t = thr_lce_plain<rle_string_t>,
     class sparse_bv_type = ri::sparse_sd_vector,
@@ -485,12 +486,13 @@ public:
 
         const size_t n = slp.getLen();
         verbose("Pattern length: ", m);
+        slp.precompute_pattern(pattern);
 
         size_t last_len;
         size_t last_ref;
 
         // freq of LCE skipping and a counter for it
-        const size_t lce_freq = 1;
+        const size_t lce_freq = 5;
         size_t lce_cnt = 0;
 
         vector<size_t> stored_sample_pos(lce_freq), stored_ptr(lce_freq);
@@ -552,24 +554,18 @@ public:
 
         };
 
-        auto compute_lce = [&] (const size_t pos_sample, const size_t pos_mem, const size_t max_len) -> size_t {
-            const size_t len = ((pos_sample + 1) >= n) ? 0 : lceToRBounded(slp, pos_sample + 1, pos_mem, max_len);
+        auto compute_lce = [&] (const size_t pos_sample, const size_t pos_pattern, const size_t max_len) -> size_t {
+            //verbose("pos_p: ", pos_pattern);
+            const size_t len = ((pos_sample + 1) >= n) ? 0 : match_length_query(slp, pos_sample + 1, pos_pattern);
             const size_t res_len = std::min(max_len, len);
             return res_len;
         };
 
         auto empty_stack = [&] () {
-            //const int last_delay = lce_cnt - 1;
-            //verbose("emptying stack of ", lce_cnt, " jumps");
-            //for (int j = 0; j < lce_cnt; j++) {
-            //    size_t lce = compute_lce(stored_sample_pos[j], stored_ptr[j], 1000);
-            //    verbose("lce", lce+1);
-            //}
-
             for (int j = 0; j < lce_cnt; j++) {
                 //const size_t skipped_steps = (j > 0) ? (stored_it[j] - (stored_it[j - 1] + 1) + 1) : 0;
 
-                last_len = compute_lce(stored_sample_pos[j], stored_ptr[j], last_len);
+                last_len = compute_lce(stored_sample_pos[j], m-stored_it[j], last_len);
                 write_len(last_len+1, lce_is_paused);
                 //verbose("i = ", stored_it[j], " last_len = ", last_len);
                 //verbose("last_ref = ", last_ref, " sample[j]= ", stored_sample_pos[j], " ptr[j]= ", stored_ptr[j]);
@@ -624,7 +620,7 @@ public:
                             const size_t len0 = last_len;
                             //verbose("i = ", i, "last_ref = ", last_ref, "STORED UP for = ", ref0, " pos= ", pos, " thr= ", thr);
 
-                            const size_t ref1 = this->samples_start[run1];
+                            //const size_t ref1 = this->samples_start[run1];
                             //verbose("up lce = ", compute_lce(last_ref, ref0, 1000));
                             //verbose("down lce = ", compute_lce(last_ref, this->samples_start[run1], 1000));
                             //verbose("i = ", i, "last_ref = ", last_ref, "STORED DOWN for = ", ref1);
@@ -650,11 +646,14 @@ public:
                     const int new_r_bound = last_len + skipped_steps;
                     //verbose("lce_cnt", lce_cnt);
 
-                    size_t lce = compute_lce(stored_sample_pos[last_delay], stored_ptr[last_delay], new_r_bound);
+                    size_t lce = compute_lce(stored_sample_pos[last_delay], m-stored_it[last_delay], new_r_bound);
 
                     lce_is_paused = false;
                     if (lce == new_r_bound) {
-                        //verbose("lce: ", lce, " last_len+skipped_steps: ", last_len + skipped_steps, " last_len", last_len, " skipped_steps: ", skipped_steps, "i = ", i);
+                        verbose("first delayed unbounded lce: ", compute_lce(stored_sample_pos[0], m-stored_it[0], 1000));
+                        verbose("last  delayed unbounded lce: ", compute_lce(stored_sample_pos[last_delay], m-stored_it[last_delay], 1000));
+                        verbose("lce: ", lce, " last_len+skipped_steps: ", last_len + skipped_steps, " last_len", last_len, " skipped_steps: ", skipped_steps, "i = ", i);
+                        verbose("stored_sample_pos:", stored_sample_pos[last_delay]);
                         //verbose("last_ref=", last_ref);
                         // if we still process the same MEM, we know the lens right ahead
                         for (int j = 0; j < skipped_steps; j++) {
@@ -678,7 +677,7 @@ public:
         //verbose("last len pushed: ", lens.back());
 
         if (lce_cnt > 0) {
-            //verbose("emptying stack of size ", lce_cnt);
+            verbose("emptying stack of size ", lce_cnt);
             // do the remaining LCEs
             const int last_delay = lce_cnt - 1;
             lce_is_paused = false;
