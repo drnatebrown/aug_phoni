@@ -495,7 +495,7 @@ public:
         const size_t lce_freq = 5;
         size_t lce_cnt = 0;
 
-        vector<size_t> stored_sample_pos(lce_freq), stored_ptr(lce_freq);
+        vector<size_t> stored_sample_pos(lce_freq), stored_ptr(lce_freq), stored_run(lce_freq);
         vector<int> stored_it(lce_freq+1, 0);
         vector<bool> direction(lce_freq);
         bool lce_is_paused = false;
@@ -524,33 +524,32 @@ public:
         struct Triplet {
             size_t sa, ref, len;
         };
-        auto delay_preceding_lce = [&] (const size_t rank, char c, int i) -> Triplet {
+        auto delay_preceding_lce = [&] (const size_t run1, const size_t rank, char c, int i) -> Triplet {
             const size_t sa0 = this->bwt.select(rank-1, c);
             const ri::ulint run0 = this->bwt.run_of_position(sa0);
             const size_t textposLast = this->samples_last[run0];
-
             //verbose("i = ", i, "last_ref = ", last_ref, " lce_is_paused =", lce_is_paused, "UP= ", textposLast);
             lce_is_paused = true;
             stored_it[lce_cnt] = i;
             stored_sample_pos[lce_cnt] = textposLast;
             stored_ptr[lce_cnt] = last_ref;
+            stored_run[lce_cnt] = run1;
             direction[lce_cnt] = 0;
             lce_cnt++;
             return {sa0, textposLast, 0};
         };
 
-        auto delay_succeeding_lce = [&] (const size_t sa1, const size_t run, int i) -> Triplet {
+        auto delay_succeeding_lce = [&] (const size_t sa, const size_t run, int i) -> Triplet {
             const size_t textposStart = this->samples_start[run];
-
-            //verbose("sa1 ", sa1);
             //verbose("i = ", i, "last_ref = ", last_ref, " lce_is_paused =", lce_is_paused, "DOWN= ", textposStart, " run = ", this->bwt.run_of_position(sa1));
             lce_is_paused = true;
             stored_it[lce_cnt] = i;
             stored_sample_pos[lce_cnt] = textposStart;
             stored_ptr[lce_cnt] = last_ref;
+            stored_run[lce_cnt] = run;
             direction[lce_cnt] = 1;
             lce_cnt++;
-            return {sa1, textposStart, 0};
+            return {sa, textposStart, 0};
 
         };
 
@@ -564,8 +563,13 @@ public:
         auto empty_stack = [&] () {
             for (int j = 0; j < lce_cnt; j++) {
                 //const size_t skipped_steps = (j > 0) ? (stored_it[j] - (stored_it[j - 1] + 1) + 1) : 0;
-
-                last_len = compute_lce(stored_sample_pos[j], m-stored_it[j], last_len);
+                if (((direction[j] == 0) && !thr_lce.skip_preceding_lce(stored_run[j], last_len)) ||
+                    ((direction[j] == 1) && !thr_lce.skip_succeeding_lce(stored_run[j], last_len))) {
+                    last_len = compute_lce(stored_sample_pos[j], m-stored_it[j], last_len);
+                }
+                //else {
+                //    verbose("using stored threshold LCE");
+                //}
                 write_len(last_len+1, lce_is_paused);
                 //verbose("i = ", stored_it[j], " last_len = ", last_len);
                 //verbose("last_ref = ", last_ref, " sample[j]= ", stored_sample_pos[j], " ptr[j]= ", stored_ptr[j]);
@@ -609,7 +613,7 @@ public:
                         return delay_succeeding_lce(sa1, run1, i);
                     } else if(rank >= number_of_runs_of_c) {
                         // Check only preceding -> we ignore thresholds in this case
-                        return delay_preceding_lce(rank, c, i);
+                        return delay_preceding_lce(run1, rank, c, i);
                     }
                     // Check thresholds and boundary LCEs first
                     const size_t thr = thresholds[run1];
@@ -626,7 +630,7 @@ public:
                             //verbose("i = ", i, "last_ref = ", last_ref, "STORED DOWN for = ", ref1);
                             return {sa0, ref0, len0};
                         } else {
-                            return delay_preceding_lce(rank, c, i);
+                            return delay_preceding_lce(run1, rank, c, i);
                         }
                     } else {
                         if (!lce_is_paused && thr_lce.skip_succeeding_lce(run1, last_len)) {
