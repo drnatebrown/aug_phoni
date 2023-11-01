@@ -487,7 +487,7 @@ public:
 
         const size_t n = slp.getLen();
         verbose("Pattern length: ", m);
-        slp.precompute_pattern(pattern);
+        slp.precompute_pattern(pattern); // KR hashes of the pattern prefixes
 
         size_t last_len;
         size_t last_ref;
@@ -507,6 +507,10 @@ public:
             //verbose("p= ", p);
             last_ref = p;
             refs.push_back(last_ref);
+        };
+
+        auto write_len_segment = [&] (const int n_iters) {
+            for (int j = 0; j < n_iters; j++) write_len(last_len+1, lce_is_paused);
         };
 
         write_len(1, lce_is_paused);
@@ -560,7 +564,6 @@ public:
 
         auto empty_stack = [&] () {
             for (int j = 0; j < lce_cnt; j++) {
-                //const size_t skipped_steps = (j > 0) ? (stored_it[j] - (stored_it[j - 1] + 1) + 1) : 0;
                 if (((direction[j] == 0) && !thr_lce.skip_preceding_lce(stored_run[j], last_len)) ||
                     ((direction[j] == 1) && !thr_lce.skip_succeeding_lce(stored_run[j], last_len))) {
                     last_len = compute_lce(stored_sample_pos[j], m-stored_it[j], last_len);
@@ -569,12 +572,7 @@ public:
                 //    verbose("using stored threshold LCE");
                 //}
                 write_len(last_len+1, lce_is_paused);
-                //verbose("i = ", stored_it[j], " last_len = ", last_len);
-                //verbose("last_ref = ", last_ref, " sample[j]= ", stored_sample_pos[j], " ptr[j]= ", stored_ptr[j]);
-                for (int k = 0; k < (stored_it[j+1] - stored_it[j] - 1); k++) {
-                    write_len(last_len+1, lce_is_paused);
-                    //verbose("last_len = ", last_len);
-                }
+                write_len_segment(stored_it[j+1] - stored_it[j] - 1);
             }
         };
 
@@ -596,7 +594,6 @@ public:
 
                 if (rank > 0) {
                     sa0 = this->bwt.select(rank-1, c);
-                    //verbose("i=", i);
                 }
 
                 if (rank < number_of_runs_of_c) {
@@ -646,9 +643,8 @@ public:
                     const int last_delay = lce_freq - 1;
                     const size_t skipped_steps = (stored_it[last_delay] - stored_it[0]);
                     const int new_r_bound = last_len + skipped_steps;
-                    //verbose("lce_cnt", lce_cnt);
 
-                    size_t lce = compute_lce(stored_sample_pos[last_delay], m-stored_it[last_delay], new_r_bound);
+                    const size_t lce = compute_lce(stored_sample_pos[last_delay], m-stored_it[last_delay], new_r_bound);
 
                     lce_is_paused = false;
                     if (lce == new_r_bound) {
@@ -656,13 +652,8 @@ public:
                         verbose("last  delayed unbounded lce: ", compute_lce(stored_sample_pos[last_delay], m-stored_it[last_delay], 1000));
                         verbose("lce: ", lce, " last_len+skipped_steps: ", last_len + skipped_steps, " last_len", last_len, " skipped_steps: ", skipped_steps, "i = ", i);
                         verbose("stored_sample_pos:", stored_sample_pos[last_delay]);
-                        //verbose("last_ref=", last_ref);
                         // if we still process the same MEM, we know the lens right ahead
-                        for (int j = 0; j < skipped_steps; j++) {
-                            write_len(last_len+1, lce_is_paused);
-                            //verbose("last_len ", last_len);
-                        }
-                        write_len(last_len+1, lce_is_paused);
+                        write_len_segment(skipped_steps+1);
                     } else  {
                         empty_stack();
                     }
@@ -681,10 +672,10 @@ public:
         if (lce_cnt > 0) {
             verbose("emptying stack of size ", lce_cnt);
             // do the remaining LCEs
-            const int last_delay = lce_cnt - 1;
+            const size_t last_delay = lce_cnt - 1;
             lce_is_paused = false;
             empty_stack();
-            for (int j = 0; j < (m - 1 - stored_it[last_delay]); j++) write_len(last_len+1, lce_is_paused);
+            write_len_segment(m - 1 - stored_it[last_delay]);
         }
         //verbose("lens_size = ", lens.size(), " refs.size = ", refs.size());
         return std::make_pair(lens, refs);

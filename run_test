@@ -3,7 +3,7 @@
 in=small_patterns.fa
 
 ./build/test/src/phoni ./data/cov.fa -p ./data/$in -g plain
-./build/test/src/aug_phoni_lazy ./data/cov.fa -p ./data/$in -g plain -d 5
+./build/test/src/aug_phoni_lazy ./data/cov.fa -p ./data/$in -g plain -d 2
 
 for f in pointers lengths; do
     echo -en "$f: "
