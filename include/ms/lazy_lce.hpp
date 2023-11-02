@@ -562,6 +562,7 @@ public:
         };
 
         auto empty_the_stack = [&] () {
+            // we only compute (lce_cnt - 1) LCEs as the last one already was computed  
             for (int j = 0; j < (lce_cnt - 1); j++) {
                 if (((direction[j] == 0) && !thr_lce.skip_preceding_lce(stored_run[j], last_len)) ||
                     ((direction[j] == 1) && !thr_lce.skip_succeeding_lce(stored_run[j], last_len))) {
@@ -578,7 +579,8 @@ public:
         auto try_skip_lces = [&] (const size_t lces_to_skip) {
             const size_t last_delay = lces_to_skip - 1;
             const size_t skipped_steps = (stored_it[last_delay] - stored_it[0]);
-            const int new_r_bound = last_len + skipped_steps;
+            const int new_r_bound = last_len + skipped_steps; // if we are processing the same MEM, this is its length
+
 
             const size_t lce = compute_lce(stored_sample_pos[last_delay], m-stored_it[last_delay], new_r_bound);
 
