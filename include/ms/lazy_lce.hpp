@@ -561,8 +561,8 @@ public:
             return res_len;
         };
 
-        auto empty_stack = [&] () {
-            for (int j = 0; j < lce_cnt; j++) {
+        auto empty_the_stack = [&] () {
+            for (int j = 0; j < (lce_cnt - 1); j++) {
                 if (((direction[j] == 0) && !thr_lce.skip_preceding_lce(stored_run[j], last_len)) ||
                     ((direction[j] == 1) && !thr_lce.skip_succeeding_lce(stored_run[j], last_len))) {
                     last_len = compute_lce(stored_sample_pos[j], m-stored_it[j], last_len);
@@ -573,6 +573,28 @@ public:
                 write_len(last_len+1, lce_is_paused);
                 write_len_segment(stored_it[j+1] - stored_it[j] - 1);
             }
+        };
+
+        auto try_skip_lces = [&] (const size_t lces_to_skip) {
+            const size_t last_delay = lces_to_skip - 1;
+            const size_t skipped_steps = (stored_it[last_delay] - stored_it[0]);
+            const int new_r_bound = last_len + skipped_steps;
+
+            const size_t lce = compute_lce(stored_sample_pos[last_delay], m-stored_it[last_delay], new_r_bound);
+
+            lce_is_paused = false;
+            if (lce == new_r_bound) {
+                //verbose("first delayed unbounded lce: ", compute_lce(stored_sample_pos[0], m-stored_it[0], 1000));
+                //verbose("last  delayed unbounded lce: ", compute_lce(stored_sample_pos[last_delay], m-stored_it[last_delay], 1000));
+                //verbose("lce: ", lce, " last_len+skipped_steps: ", last_len + skipped_steps, " last_len", last_len, " skipped_steps: ", skipped_steps);
+                //verbose("stored_sample_pos:", stored_sample_pos[last_delay]);
+                // if we still process the same MEM, we know the lens right ahead
+                write_len_segment(skipped_steps+1);
+            } else  {
+                empty_the_stack();
+                write_len(lce+1, lce_is_paused);
+            }
+            lce_cnt = 0;
         };
 
         for (size_t i = 1; i < m; ++i) {
@@ -636,24 +658,7 @@ public:
                 }();
 
                 if (lce_cnt == lce_freq) {
-                    const int last_delay = lce_freq - 1;
-                    const size_t skipped_steps = (stored_it[last_delay] - stored_it[0]);
-                    const int new_r_bound = last_len + skipped_steps;
-
-                    const size_t lce = compute_lce(stored_sample_pos[last_delay], m-stored_it[last_delay], new_r_bound);
-
-                    lce_is_paused = false;
-                    if (lce == new_r_bound) {
-                        //verbose("first delayed unbounded lce: ", compute_lce(stored_sample_pos[0], m-stored_it[0], 1000));
-                        //verbose("last  delayed unbounded lce: ", compute_lce(stored_sample_pos[last_delay], m-stored_it[last_delay], 1000));
-                        //verbose("lce: ", lce, " last_len+skipped_steps: ", last_len + skipped_steps, " last_len", last_len, " skipped_steps: ", skipped_steps, "i = ", i);
-                        //verbose("stored_sample_pos:", stored_sample_pos[last_delay]);
-                        // if we still process the same MEM, we know the lens right ahead
-                        write_len_segment(skipped_steps+1);
-                    } else  {
-                        empty_stack();
-                    }
-                    lce_cnt = 0;
+                    try_skip_lces(lce_freq);
                 } else {
                     write_len(1 + jump.len, lce_is_paused);
                 }
@@ -667,11 +672,8 @@ public:
 
         if (lce_cnt > 0) {
             //verbose("emptying stack of size ", lce_cnt);
-            // do the remaining LCEs
-            const size_t last_delay = lce_cnt - 1;
-            lce_is_paused = false;
-            empty_stack();
-            write_len_segment(m - 1 - stored_it[last_delay]);
+            try_skip_lces(lce_cnt); // do the remaining LCEs
+            write_len_segment(refs.size() - lens.size()); // write the tailing lengths that are missing
         }
         //verbose("lens_size = ", lens.size(), " refs.size = ", refs.size());
         return std::make_pair(lens, refs);
