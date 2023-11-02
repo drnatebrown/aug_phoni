@@ -329,7 +329,7 @@ struct Args
   std::string filename = "";
   std::string grammar = "";
   std::string thr_lce = "";
-  size_t lcp_delay = 0; // the number of LCP computations to delay
+  size_t lcp_delay = 1; // the number of LCP computations to delay
   size_t w = 10; // sliding window size and its default
   size_t bytes = 0; // number of bytes in thr_lce array to store
   bool store = false; // store the data structure in the file
@@ -349,7 +349,7 @@ void parseArgs(int argc, char *const argv[], Args &arg)
   std::string usage("usage: " + std::string(argv[0]) + " infile [-s store] [-m memo] [-c csv] [-p patterns] [-f fasta] [-d lcp_delay] [-r rle] [-g grammar] [-t thr_lce] [-b bytes]\n\n" +
                     "Computes the pfp data structures of infile, provided that infile.parse, infile.dict, and infile.occ exists.\n" +
                     "    wsize: [integer] - sliding window size (def. 10)\n" +
-                    "lcp_delay: [integer] - the number of LCPs we delay in the lazy mode (def. 0)\n" +
+                    "lcp_delay: [integer] - the number of LCPs we delay in the lazy mode (def. 1)\n" +
                     "    store: [boolean] - store the data structure in infile.pfp.ds. (def. false)\n" +
                     "     memo: [boolean] - print the data structure memory usage. (def. false)\n" +
                     "    fasta: [boolean] - the input file is a fasta file. (def. false)\n" +

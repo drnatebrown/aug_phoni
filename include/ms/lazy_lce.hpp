@@ -556,7 +556,6 @@ public:
         };
 
         auto compute_lce = [&] (const size_t pos_sample, const size_t pos_pattern, const size_t max_len) -> size_t {
-            //verbose("pos_p: ", pos_pattern);
             const size_t len = ((pos_sample + 1) >= n) ? 0 : match_length_query(slp, pos_sample + 1, pos_pattern);
             const size_t res_len = std::min(max_len, len);
             return res_len;
@@ -617,11 +616,8 @@ public:
                             const ri::ulint run0 = this->bwt.run_of_position(sa0);
                             const size_t ref0 = this->samples_last[run0];
                             const size_t len0 = last_len;
-                            //verbose("i = ", i, "last_ref = ", last_ref, "STORED UP for = ", ref0, " pos= ", pos, " thr= ", thr);
-
                             //const size_t ref1 = this->samples_start[run1];
-                            //verbose("up lce = ", compute_lce(last_ref, ref0, 1000));
-                            //verbose("down lce = ", compute_lce(last_ref, this->samples_start[run1], 1000));
+                            //verbose("i = ", i, "last_ref = ", last_ref, "STORED UP for = ", ref0, " pos= ", pos, " thr= ", thr);
                             //verbose("i = ", i, "last_ref = ", last_ref, "STORED DOWN for = ", ref1);
                             return {sa0, ref0, len0};
                         } else {
@@ -648,10 +644,10 @@ public:
 
                     lce_is_paused = false;
                     if (lce == new_r_bound) {
-                        verbose("first delayed unbounded lce: ", compute_lce(stored_sample_pos[0], m-stored_it[0], 1000));
-                        verbose("last  delayed unbounded lce: ", compute_lce(stored_sample_pos[last_delay], m-stored_it[last_delay], 1000));
-                        verbose("lce: ", lce, " last_len+skipped_steps: ", last_len + skipped_steps, " last_len", last_len, " skipped_steps: ", skipped_steps, "i = ", i);
-                        verbose("stored_sample_pos:", stored_sample_pos[last_delay]);
+                        //verbose("first delayed unbounded lce: ", compute_lce(stored_sample_pos[0], m-stored_it[0], 1000));
+                        //verbose("last  delayed unbounded lce: ", compute_lce(stored_sample_pos[last_delay], m-stored_it[last_delay], 1000));
+                        //verbose("lce: ", lce, " last_len+skipped_steps: ", last_len + skipped_steps, " last_len", last_len, " skipped_steps: ", skipped_steps, "i = ", i);
+                        //verbose("stored_sample_pos:", stored_sample_pos[last_delay]);
                         // if we still process the same MEM, we know the lens right ahead
                         write_len_segment(skipped_steps+1);
                     } else  {
@@ -670,7 +666,7 @@ public:
         //verbose("last len pushed: ", lens.back());
 
         if (lce_cnt > 0) {
-            verbose("emptying stack of size ", lce_cnt);
+            //verbose("emptying stack of size ", lce_cnt);
             // do the remaining LCEs
             const size_t last_delay = lce_cnt - 1;
             lce_is_paused = false;
