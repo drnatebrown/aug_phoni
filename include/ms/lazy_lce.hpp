@@ -553,12 +553,18 @@ public:
             //verbose("i = ", i, "last_ref = ", last_ref, " lce_is_paused =", lce_is_paused, "DOWN= ", textposStart, " run = ", this->bwt.run_of_position(sa1));
             store_lce_info(i, textpos, run, skip);
             return {sa, textpos, 0};
-
         };
 
-        auto compute_lce = [&] (const size_t pos_sample, const size_t pos_pattern) -> size_t {
+        auto compute_mlq = [&] (const size_t pos_sample, const size_t pos_pattern) -> size_t {
             //verbose("computing MLQ for:  ", pos_sample, " ", pos_pattern);
             return ((pos_sample + 1) >= n) ? 0 : match_length_query(slp, pos_sample + 1, pos_pattern);
+        };
+
+        auto compute_lce = [&] (const size_t pos_sample, const size_t pos_ptr, const size_t max_len) -> size_t {
+            //verbose("computing MLQ for:  ", pos_sample, " ", pos_pattern);
+            auto lce =  ((pos_sample + 1) >= n) ? 0 : lceToRBounded(slp, pos_sample + 1, pos_ptr, max_len);
+            //verbose("computed LCE of:  ", lce, " ", max_len);
+            return min(max_len, lce);
         };
 
         auto empty_stack = [&] () {
@@ -567,7 +573,7 @@ public:
                 if ( (direction[j] == forbidden) ||
                     ((direction[j] == up) && !thr_lce.skip_preceding_lce(stored_run[j], last_len)) ||
                     ((direction[j] == down) && !thr_lce.skip_succeeding_lce(stored_run[j], last_len))) {
-                  last_len = compute_lce(stored_sample_pos[j], m-stored_it[j]);
+                  last_len = compute_lce(stored_sample_pos[j], stored_ptr[j], last_len);
                 }
                 write_len_segment(max(1, stored_it[j+1] - stored_it[j]));
             }
@@ -578,7 +584,7 @@ public:
             const size_t skipped_steps = (stored_it[last_delay] - stored_it[0]);
             const int new_r_bound = last_len + skipped_steps; // if we are processing the same MEM, this is its length
 
-            const size_t lce = compute_lce(stored_sample_pos[last_delay], m-stored_it[last_delay]);
+            const size_t lce = compute_mlq(stored_sample_pos[last_delay], m-stored_it[last_delay]);
 
             lce_is_paused = false;
             if (lce == new_r_bound) {
