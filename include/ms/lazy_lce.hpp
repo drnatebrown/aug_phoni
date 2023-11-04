@@ -528,42 +528,40 @@ public:
         struct Triplet {
             size_t sa, ref, len;
         };
+
+        auto store_lce_info = [&] (const int i, const size_t textpos, const size_t run, lce_skip skip) {
+            lce_is_paused = true;
+            stored_it[lce_cnt] = i;
+            stored_sample_pos[lce_cnt] = textpos;
+            stored_ptr[lce_cnt] = last_ref;
+            stored_run[lce_cnt] = run;
+            direction[lce_cnt] = skip;
+            lce_cnt++;
+        };
+
         auto delay_preceding_lce = [&] (const size_t run, const size_t rank, char c, int i, lce_skip skip) -> Triplet {
             const size_t sa0 = this->bwt.select(rank-1, c);
             const ri::ulint run0 = this->bwt.run_of_position(sa0);
-            const size_t textposLast = this->samples_last[run0];
+            const size_t textpos = this->samples_last[run0];
             //verbose("i = ", i, "last_ref = ", last_ref, " lce_is_paused =", lce_is_paused, "UP= ", textposLast);
-            lce_is_paused = true;
-            stored_it[lce_cnt] = i;
-            stored_sample_pos[lce_cnt] = textposLast;
-            stored_ptr[lce_cnt] = last_ref;
-            stored_run[lce_cnt] = run;
-            direction[lce_cnt] = skip;
-            lce_cnt++;
-            return {sa0, textposLast, 0};
+            store_lce_info(i, textpos, run, skip);
+            return {sa0, textpos, 0};
         };
 
         auto delay_succeeding_lce = [&] (const size_t sa, const size_t run, int i, lce_skip skip) -> Triplet {
-            const size_t textposStart = this->samples_start[run];
+            const size_t textpos = this->samples_start[run];
             //verbose("i = ", i, "last_ref = ", last_ref, " lce_is_paused =", lce_is_paused, "DOWN= ", textposStart, " run = ", this->bwt.run_of_position(sa1));
-            lce_is_paused = true;
-            stored_it[lce_cnt] = i;
-            stored_sample_pos[lce_cnt] = textposStart;
-            stored_ptr[lce_cnt] = last_ref;
-            stored_run[lce_cnt] = run;
-            direction[lce_cnt] = skip;
-            lce_cnt++;
-            return {sa, textposStart, 0};
+            store_lce_info(i, textpos, run, skip);
+            return {sa, textpos, 0};
 
         };
 
         auto compute_lce = [&] (const size_t pos_sample, const size_t pos_pattern) -> size_t {
             //verbose("computing MLQ for:  ", pos_sample, " ", pos_pattern);
-            const size_t len = ((pos_sample + 1) >= n) ? 0 : match_length_query(slp, pos_sample + 1, pos_pattern);
-            return len;
+            return ((pos_sample + 1) >= n) ? 0 : match_length_query(slp, pos_sample + 1, pos_pattern);
         };
 
-        auto empty_the_stack = [&] () {
+        auto empty_stack = [&] () {
             // we only compute (lce_cnt - 1) LCEs as the last one already was computed  
             for (int j = 0; j < (lce_cnt - 1); j++) {
                 if ( (direction[j] == forbidden) ||
@@ -591,7 +589,7 @@ public:
                 // if we still process the same MEM, we know the lens right ahead
                 write_len_segment(skipped_steps+1);
             } else {
-                empty_the_stack();
+                empty_stack();
                 write_len(lce+1, lce_is_paused);
             }
             lce_cnt = 0;
