@@ -1,13 +1,14 @@
 #!/bin/bash
 
-in=small_patterns.fa
+in=./data/small_patterns.fa
+ref=./data/chr19.16.fa
 
-./build/test/src/phoni ./data/cov.fa -p ./data/$in -g plain
-./build/test/src/aug_phoni_lazy ./data/cov.fa -p ./data/$in -g plain -d 2
+./build/test/src/phoni $ref -p $in -g plain
+./build/test/src/aug_phoni_lazy $ref -p $in -g plain -d 2
 
 for f in pointers lengths; do
     echo -en "$f: "
-    diff ./data/$in.$f ./data/$in.$f.aug
+    diff $in.$f $in.$f.aug
     es=$?
     if [ $es -ne 0 ]; then
         echo "difference found :("

@@ -30,6 +30,7 @@
 //#define NAIVE_LCE_SCHEDULE 1 //stupidly execute two LCEs without heurstics
 #include "Common.hpp"
 #include <cstddef>
+#include <sdsl/util.hpp>
 #ifndef NAIVE_LCE_SCHEDULE //apply a heuristic
 #define SORT_BY_DISTANCE_HEURISTIC 1 // apply a heuristic to compute the LCE with the closer BWT position first
 #endif
@@ -320,7 +321,7 @@ public:
 #endif
 
         for (size_t i = 1; i < m; ++i) {
-            verbose("i= ", i);
+            //verbose("i= ", i);
 
             const auto c = pattern_at(m - i - 1);
             const size_t number_of_runs_of_c = this->bwt.number_of_letter(c);
@@ -493,9 +494,10 @@ public:
         size_t last_ref;
 
         size_t lce_cnt = 0;
+        enum lce_skip { up, down, forbidden };
         vector<size_t> stored_sample_pos(lce_freq), stored_ptr(lce_freq), stored_run(lce_freq);
         vector<int> stored_it(lce_freq+1, 0);
-        vector<bool> direction(lce_freq);
+        vector<lce_skip> direction(lce_freq); // 0 - try skip UP, 1 - try skip DOWN, 2 - do not try to skip
         bool lce_is_paused = false;
 
         auto write_len = [&] (const size_t l, bool lce_is_paused) {
@@ -526,7 +528,7 @@ public:
         struct Triplet {
             size_t sa, ref, len;
         };
-        auto delay_preceding_lce = [&] (const size_t run1, const size_t rank, char c, int i) -> Triplet {
+        auto delay_preceding_lce = [&] (const size_t run, const size_t rank, char c, int i, lce_skip skip) -> Triplet {
             const size_t sa0 = this->bwt.select(rank-1, c);
             const ri::ulint run0 = this->bwt.run_of_position(sa0);
             const size_t textposLast = this->samples_last[run0];
@@ -535,13 +537,13 @@ public:
             stored_it[lce_cnt] = i;
             stored_sample_pos[lce_cnt] = textposLast;
             stored_ptr[lce_cnt] = last_ref;
-            stored_run[lce_cnt] = run1;
-            direction[lce_cnt] = 0;
+            stored_run[lce_cnt] = run;
+            direction[lce_cnt] = skip;
             lce_cnt++;
             return {sa0, textposLast, 0};
         };
 
-        auto delay_succeeding_lce = [&] (const size_t sa, const size_t run, int i) -> Triplet {
+        auto delay_succeeding_lce = [&] (const size_t sa, const size_t run, int i, lce_skip skip) -> Triplet {
             const size_t textposStart = this->samples_start[run];
             //verbose("i = ", i, "last_ref = ", last_ref, " lce_is_paused =", lce_is_paused, "DOWN= ", textposStart, " run = ", this->bwt.run_of_position(sa1));
             lce_is_paused = true;
@@ -549,30 +551,27 @@ public:
             stored_sample_pos[lce_cnt] = textposStart;
             stored_ptr[lce_cnt] = last_ref;
             stored_run[lce_cnt] = run;
-            direction[lce_cnt] = 1;
+            direction[lce_cnt] = skip;
             lce_cnt++;
             return {sa, textposStart, 0};
 
         };
 
-        auto compute_lce = [&] (const size_t pos_sample, const size_t pos_pattern, const size_t max_len) -> size_t {
+        auto compute_lce = [&] (const size_t pos_sample, const size_t pos_pattern) -> size_t {
+            //verbose("computing MLQ for:  ", pos_sample, " ", pos_pattern);
             const size_t len = ((pos_sample + 1) >= n) ? 0 : match_length_query(slp, pos_sample + 1, pos_pattern);
-            const size_t res_len = std::min(max_len, len);
-            return res_len;
+            return len;
         };
 
         auto empty_the_stack = [&] () {
             // we only compute (lce_cnt - 1) LCEs as the last one already was computed  
             for (int j = 0; j < (lce_cnt - 1); j++) {
-                if (((direction[j] == 0) && !thr_lce.skip_preceding_lce(stored_run[j], last_len)) ||
-                    ((direction[j] == 1) && !thr_lce.skip_succeeding_lce(stored_run[j], last_len))) {
-                    last_len = compute_lce(stored_sample_pos[j], m-stored_it[j], last_len);
+                if ( (direction[j] == forbidden) ||
+                    ((direction[j] == up) && !thr_lce.skip_preceding_lce(stored_run[j], last_len)) ||
+                    ((direction[j] == down) && !thr_lce.skip_succeeding_lce(stored_run[j], last_len))) {
+                  last_len = compute_lce(stored_sample_pos[j], m-stored_it[j]);
                 }
-                //else {
-                //    verbose("using stored threshold LCE");
-                //}
-                write_len(last_len+1, lce_is_paused);
-                write_len_segment(stored_it[j+1] - stored_it[j] - 1);
+                write_len_segment(max(1, stored_it[j+1] - stored_it[j]));
             }
         };
 
@@ -581,8 +580,7 @@ public:
             const size_t skipped_steps = (stored_it[last_delay] - stored_it[0]);
             const int new_r_bound = last_len + skipped_steps; // if we are processing the same MEM, this is its length
 
-
-            const size_t lce = compute_lce(stored_sample_pos[last_delay], m-stored_it[last_delay], new_r_bound);
+            const size_t lce = compute_lce(stored_sample_pos[last_delay], m-stored_it[last_delay]);
 
             lce_is_paused = false;
             if (lce == new_r_bound) {
@@ -592,7 +590,7 @@ public:
                 //verbose("stored_sample_pos:", stored_sample_pos[last_delay]);
                 // if we still process the same MEM, we know the lens right ahead
                 write_len_segment(skipped_steps+1);
-            } else  {
+            } else {
                 empty_the_stack();
                 write_len(lce+1, lce_is_paused);
             }
@@ -628,10 +626,10 @@ public:
                 const Triplet jump = [&] () -> Triplet {
                     if (rank == 0) {
                         // Check only succeeding -> we ignore thresholds in this case
-                        return delay_succeeding_lce(sa1, run1, i);
+                        return delay_succeeding_lce(sa1, run1, i, forbidden);
                     } else if(rank >= number_of_runs_of_c) {
                         // Check only preceding -> we ignore thresholds in this case
-                        return delay_preceding_lce(run1, rank, c, i);
+                        return delay_preceding_lce(run1, rank, c, i, forbidden);
                     }
                     // Check thresholds and boundary LCEs first
                     const size_t thr = thresholds[run1];
@@ -640,12 +638,10 @@ public:
                             const ri::ulint run0 = this->bwt.run_of_position(sa0);
                             const size_t ref0 = this->samples_last[run0];
                             const size_t len0 = last_len;
-                            //const size_t ref1 = this->samples_start[run1];
                             //verbose("i = ", i, "last_ref = ", last_ref, "STORED UP for = ", ref0, " pos= ", pos, " thr= ", thr);
-                            //verbose("i = ", i, "last_ref = ", last_ref, "STORED DOWN for = ", ref1);
                             return {sa0, ref0, len0};
                         } else {
-                            return delay_preceding_lce(run1, rank, c, i);
+                            return delay_preceding_lce(run1, rank, c, i, up);
                         }
                     } else {
                         if (!lce_is_paused && thr_lce.skip_succeeding_lce(run1, last_len)) {
@@ -654,7 +650,7 @@ public:
                             //verbose("i = ", i, "last_ref = ", last_ref, "STORED DOWN for = ", ref1);
                             return {sa1, ref1, len1};
                         } else {
-                            return delay_succeeding_lce(sa1, run1, i);
+                            return delay_succeeding_lce(sa1, run1, i, down);
                         }
                     }
                 }();
@@ -669,8 +665,6 @@ public:
             }
             pos = LF(pos, c); //! Perform one backward step
         }
-        //verbose("lce_cnt: ", lce_cnt);
-        //verbose("last len pushed: ", lens.back());
 
         if (lce_cnt > 0) {
             //verbose("emptying stack of size ", lce_cnt);
@@ -733,7 +727,6 @@ public:
         this->r = this->bwt.number_of_runs();
         this->samples_last.load(in);
         this->samples_start.load(in);
-        verbose("runof ", this->bwt.run_of_position(9734));
 
         thresholds.load(in, &this->bwt);
         thr_lce.load(in, &this->bwt);
