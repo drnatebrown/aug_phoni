@@ -43,7 +43,7 @@ void run(const Args& args) {
 
   matchingstats ms;
   {
-    ifstream in(args.filename + to_string(args.maxLF) + ".aug.mlq");
+    ifstream in(args.filename + "." +  to_string(args.maxLF) + ".aug.mlq");
     ms.load(in, args.filename, args.maxLF);
   }
 

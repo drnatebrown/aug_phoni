@@ -520,7 +520,7 @@ public:
         size_t last_len;
         size_t last_ref;
 
-        size_t skip_queries = 0;
+        size_t skip_queries = min_ms_len;
         bool do_mlq = false;
 
         auto write_len = [&] (const size_t l) {
@@ -532,50 +532,23 @@ public:
             refs.push_back(last_ref);
         };
 
-        skip_queries = (min_ms_len == 0) ? 0 : min_ms_len - 1;
-        if (!skip_queries) write_len(1);
-
         //! Start with the last character
         auto pos = this->bwt.select(1, pattern_at(m-1));
         {
             if (!skip_queries)
             {
                 const ri::ulint run_of_j = this->bwt.run_of_position(pos);
+                write_len(1);
                 write_ref(subsamples_start(run_of_j, pos));
             }
         }
         pos = LF(pos, pattern_at(m-1));
-        --skip_queries;
+        if (skip_queries == 1) do_mlq = true;
+        skip_queries = (min_ms_len == 0) ? 0 : min_ms_len - 1;
 
         struct Triplet {
             size_t sa, ref, len;
         };
-
-        // auto store_lce_info = [&] (const int i, const size_t textpos, const size_t run, lce_skip skip) {
-        //     lce_is_paused = true;
-        //     stored_it[lce_cnt] = i;
-        //     stored_sample_pos[lce_cnt] = textpos;
-        //     stored_ptr[lce_cnt] = last_ref;
-        //     stored_run[lce_cnt] = run;
-        //     direction[lce_cnt] = skip;
-        //     lce_cnt++;
-        // };
-
-        // auto delay_preceding_lce = [&] (const size_t run, const size_t rank, char c, int i, lce_skip skip) -> Triplet {
-        //     const size_t sa0 = this->bwt.select(rank-1, c);
-        //     const ri::ulint run0 = this->bwt.run_of_position(sa0);
-        //     const size_t textpos = this->samples_last[run0];
-        //     //verbose("i = ", i, "last_ref = ", last_ref, " lce_is_paused =", lce_is_paused, "UP= ", textposLast);
-        //     store_lce_info(i, textpos, run, skip);
-        //     return {sa0, textpos, 0};
-        // };
-
-        // auto delay_succeeding_lce = [&] (const size_t sa, const size_t run, int i, lce_skip skip) -> Triplet {
-        //     const size_t textpos = this->samples_start[run];
-        //     //verbose("i = ", i, "last_ref = ", last_ref, " lce_is_paused =", lce_is_paused, "DOWN= ", textposStart, " run = ", this->bwt.run_of_position(sa1));
-        //     store_lce_info(i, textpos, run, skip);
-        //     return {sa, textpos, 0};
-        // };
 
         auto compute_mlq = [&] (const size_t pos_sample, const size_t pos_pattern) -> size_t {
             //verbose("computing MLQ for:  ", pos_sample, " ", pos_pattern);
@@ -649,6 +622,10 @@ public:
 
             if (number_of_runs_of_c == 0) {
                 skip_queries = min_ms_len;
+                if (!skip_queries) {
+                    write_len(0);
+                    write_ref(1);
+                }
             } else if (pos < this->bwt.size() && this->bwt[pos] == c) {
                 if (!skip_queries) {
                     write_len(last_len+1);
@@ -675,40 +652,34 @@ public:
                         if (skip_queries) {
                             return {sa1, 0, 0};
                         }
-                        else if (do_mlq) {
+                        else {
                             const size_t textposStart = subsamples_start(run1, sa1);
-                            size_t match_len = compute_mlq(textposStart, m - i - 1);
+                            size_t match_len = (do_mlq) ? compute_mlq(textposStart, m - i - 1) : compute_lce(textposStart, last_ref, last_len);
                             if (match_len >= min_ms_len) {
                                 do_mlq = false;
                             }
                             else {
+                                do_mlq = false;
                                 skip_queries = min_ms_len - match_len;
                             }
                             return {sa1, textposStart, match_len};
-                        }
-                        else {
-                            const size_t textposStart = subsamples_start(run1, sa1);
-                            return {sa1, textposStart, compute_lce(textposStart, last_ref, last_len)};
                         }
                     } else if(rank >= number_of_runs_of_c) {
                         const ri::ulint run0 = this->bwt.run_of_position(sa0);
                         if (skip_queries) {
                             return {sa0, 0, 0};
                         }
-                        else if (do_mlq) {
+                        else {
                             const size_t textposLast = subsamples_last(run0, sa0);
-                            size_t match_len = compute_mlq(textposLast, m - i - 1);
+                            size_t match_len = (do_mlq) ? compute_mlq(textposLast, m - i - 1) : compute_lce(textposLast, last_ref, last_len);
                             if (match_len >= min_ms_len) {
                                 do_mlq = false;
                             }
                             else {
+                                do_mlq = false;
                                 skip_queries = min_ms_len - match_len;
                             }
                             return {sa0, textposLast, match_len};
-                        }
-                        else {
-                            const size_t textposLast = subsamples_start(run0, sa0);
-                            return {sa0, textposLast, compute_lce(textposLast, last_ref, last_len)};
                         }
                     }
                     // Check thresholds and boundary LCEs first
@@ -724,20 +695,17 @@ public:
                             if (skip_queries) {
                                 return {sa0, 0, 0};
                             }
-                            else if (do_mlq) {
+                            else {
                                 const size_t textposLast = subsamples_last(run0, sa0);
-                                size_t match_len = compute_mlq(textposLast, m - i - 1);
+                                size_t match_len = (do_mlq) ? compute_mlq(textposLast, m - i - 1) : compute_lce(textposLast, last_ref, last_len);
                                 if (match_len >= min_ms_len) {
                                     do_mlq = false;
                                 }
                                 else {
+                                    do_mlq = false;
                                     skip_queries = min_ms_len - match_len;
                                 }
                                 return {sa0, textposLast, match_len};
-                            }
-                            else {
-                                const size_t textposLast = subsamples_start(run0, sa0);
-                                return {sa0, textposLast, compute_lce(textposLast, last_ref, last_len)};
                             }
                         }
                     } else {
@@ -749,20 +717,17 @@ public:
                             if (skip_queries) {
                                 return {sa1, 0, 0};
                             }
-                            else if (do_mlq) {
+                            else {
                                 const size_t textposStart = subsamples_start(run1, sa1);
-                                size_t match_len = compute_mlq(textposStart, m - i - 1);
+                                size_t match_len = (do_mlq) ? compute_mlq(textposStart, m - i - 1) : compute_lce(textposStart, last_ref, last_len);
                                 if (match_len >= min_ms_len) {
                                     do_mlq = false;
                                 }
                                 else {
+                                    do_mlq = false;
                                     skip_queries = min_ms_len - match_len;
                                 }
                                 return {sa1, textposStart, match_len};
-                            }
-                            else {
-                                const size_t textposStart = subsamples_start(run1, sa1);
-                                return {sa1, textposStart, compute_lce(textposStart, last_ref, last_len)};
                             }
                         }
                     }
@@ -775,7 +740,14 @@ public:
                 pos = jump.sa;
             }
             pos = LF(pos, c); //! Perform one backward step
-            --skip_queries;
+            if (skip_queries == 1) {
+                do_mlq = true;
+                skip_queries = 0;
+            }
+            else if (skip_queries > 1)
+            {
+                --skip_queries;
+            }
         }
         //verbose("lens_size = ", lens.size(), " refs.size = ", refs.size());
         #ifdef MEASURE_TIME

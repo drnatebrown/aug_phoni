@@ -22,7 +22,7 @@ int main(int argc, char *const argv[]) {
 
   verbose("Using plain threshold LCEs with byte cap:", (args.bytes) ? std::to_string(args.bytes) : "none");
   ms_pointers<> ms;
-  ms.build(args.filename, args.bytes);
+  ms.build(args.filename, args.maxLF, args.bytes);
 
   std::chrono::high_resolution_clock::time_point t_insert_end = std::chrono::high_resolution_clock::now();
 
@@ -31,7 +31,7 @@ int main(int argc, char *const argv[]) {
   verbose("Elapsed time (s): ", std::chrono::duration<double, std::ratio<1>>(t_insert_end - t_insert_start).count());
 
   {
-  ofstream outfile(args.filename + ".aug.mlq", std::ios::binary);
+  ofstream outfile(args.filename + "." + to_string(args.maxLF) + ".aug.mlq", std::ios::binary);
   ms.serialize(outfile);
   }
 
