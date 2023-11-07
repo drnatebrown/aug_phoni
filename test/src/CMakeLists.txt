@@ -157,3 +157,14 @@ target_include_directories(align PUBLIC    "../../include/ms"
                                             "${ssw_SOURCE_DIR}/src"
                                         )
 target_compile_options(align PUBLIC "-std=c++17")
+
+add_executable(subsampling_sa subsampling_sa.cpp)
+target_link_libraries(subsampling_sa common sdsl divsufsort divsufsort64 malloc_count ri)
+target_include_directories(subsampling_sa PUBLIC    "../../include/ms" 
+                                        "../../include/common" 
+                                        "${shaped_slp_SOURCE_DIR}" 
+                                        "${FOLCA_SOURCE_DIR}" 
+                                        "${SUX_SOURCE_DIR}/function" 
+                                        "${SUX_SOURCE_DIR}/support"
+                                        )
+target_compile_options(subsampling_sa PUBLIC "-std=c++17")

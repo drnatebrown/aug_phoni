@@ -26,7 +26,7 @@
 
 
 /** FLAGS **/
-// #define MEASURE_TIME 1  //measure the time for LCE and backward search?
+#define MEASURE_TIME 1  //measure the time for LCE and backward search?
 //#define NAIVE_LCE_SCHEDULE 1 //stupidly execute two LCEs without heurstics
 #include "Common.hpp"
 #include <cstddef>
@@ -137,6 +137,9 @@ public:
     SlpT slp;
 
     int_vector<> samples_start;
+    std::queue<ulint> LF_next;
+    sparse_bv_type subsampled_start_samples_bv;
+    sparse_bv_type subsampled_last_samples_bv;
 
     typedef size_t size_type;
 
@@ -144,7 +147,7 @@ public:
         : ri::r_index<sparse_bv_type, rle_string_t>()
     {}
 
-    void build(const std::string& filename, int bytes = 0)
+    void build(const std::string& filename, int max_LF = 0, int bytes = 0)
     {
         verbose("Building the r-index from BWT");
 
@@ -182,8 +185,21 @@ public:
         verbose("log2(n/r) = ", log2(double(this->bwt.size()) / this->r));
         verbose("log2(n) = ", log_n);
 
-        read_samples(filename + ".ssa", this->r, n, samples_start);
-        read_samples(filename + ".esa", this->r, n, this->samples_last);
+        string subsamples_start_filename = filename + ".s." + std::to_string(max_LF) + ".ssa";
+        ifstream subsamples_start_file(subsamples_start_filename, ios::binary);
+        samples_start.load(subsamples_start_file);
+
+        string subsamples_start_bv_filename = filename + ".s." + std::to_string(max_LF) + ".ssa.bv";
+        ifstream subsamples_start_bv_file(subsamples_start_bv_filename, ios::binary);
+        subsampled_start_samples_bv.load(subsamples_start_bv_file);
+
+        string subsamples_last_filename = filename + ".s." + std::to_string(max_LF) + ".esa";
+        ifstream subsamples_last_file(subsamples_last_filename, ios::binary);
+        this->samples_last.load(subsamples_last_file);
+
+        string subsamples_last_bv_filename = filename + ".s." + std::to_string(max_LF) + ".esa.bv";
+        ifstream subsamples_last_bv_file(subsamples_last_bv_filename, ios::binary);
+        subsampled_last_samples_bv.load(subsamples_last_bv_file);
 
         std::chrono::high_resolution_clock::time_point t_insert_end = std::chrono::high_resolution_clock::now();
         verbose("R-index construction complete");
@@ -313,12 +329,12 @@ public:
         }
         pos = LF(pos, pattern_at(m-1));
 
-#ifdef MEASURE_TIME
+        #ifdef MEASURE_TIME
         double time_lce = 0;
         double time_backwardstep = 0;
         size_t count_lce_total = 0;
         size_t count_lce_skips = 0;
-#endif
+        #endif
 
         for (size_t i = 1; i < m; ++i) {
             //verbose("i= ", i);
@@ -396,6 +412,7 @@ public:
                     run1 = this->bwt.run_of_position(sa1);
                     const size_t thr = thresholds[run1];
                     if (pos < thr) {
+                        // return delay_preceding_lce();
                         if (!lce_is_paused && thr_lce.skip_preceding_lce(run1, last_len)) {
                             const ri::ulint run0 = this->bwt.run_of_position(sa0);
                             const size_t ref0 = this->samples_last[run0];
@@ -405,6 +422,7 @@ public:
                             return delay_preceding_lce();
                         }
                     } else {
+                        // return delay_succeeding_lce();
                         if (!lce_is_paused && thr_lce.skip_succeeding_lce(run1, last_len)) {
                             const size_t ref1 = this->samples_start[run1];;
                             const size_t len1 = last_len;
@@ -474,8 +492,17 @@ public:
 
     // Computes the matching statistics pointers for the given pattern
     template <typename string_t>
-    std::pair<std::vector<size_t>, std::vector<size_t>> _query(const string_t &pattern, const size_t m, const size_t lce_freq)
+    std::pair<std::vector<size_t>, std::vector<size_t>> _query(const string_t &pattern, const size_t m, const size_t min_ms_len)
     {
+        #ifdef MEASURE_TIME
+        double time_lce = 0;
+        double time_mlq = 0;
+		double time_backwardstep = 0;
+		size_t count_lce_total = 0;
+		size_t count_lce_skips = 0;
+        size_t count_mlq_total = 0;
+        #endif
+
         auto pattern_at = [&] (const size_t pos) {
             return pattern[pos];
         };
@@ -493,129 +520,145 @@ public:
         size_t last_len;
         size_t last_ref;
 
-        size_t lce_cnt = 0;
-        enum lce_skip { up, down, forbidden };
-        vector<size_t> stored_sample_pos(lce_freq), stored_ptr(lce_freq), stored_run(lce_freq);
-        vector<int> stored_it(lce_freq+1, 0);
-        vector<lce_skip> direction(lce_freq); // 0 - try skip UP, 1 - try skip DOWN, 2 - do not try to skip
-        bool lce_is_paused = false;
+        size_t skip_queries = 0;
+        bool do_mlq = false;
 
-        auto write_len = [&] (const size_t l, bool lce_is_paused) {
-            if (lce_is_paused) return;
+        auto write_len = [&] (const size_t l) {
             last_len = l;
             lens.push_back(last_len);
         };
         auto write_ref = [&] (const size_t p) {
-            //verbose("p= ", p);
             last_ref = p;
             refs.push_back(last_ref);
         };
 
-        auto write_len_segment = [&] (const int n_iters) {
-            for (int j = 0; j < n_iters; j++) write_len(last_len+1, lce_is_paused);
-        };
-
-        write_len(1, lce_is_paused);
+        skip_queries = (min_ms_len == 0) ? 0 : min_ms_len - 1;
+        if (!skip_queries) write_len(1);
 
         //! Start with the last character
         auto pos = this->bwt.select(1, pattern_at(m-1));
         {
-            const ri::ulint run_of_j = this->bwt.run_of_position(pos);
-            write_ref(samples_start[run_of_j]);
+            if (!skip_queries)
+            {
+                const ri::ulint run_of_j = this->bwt.run_of_position(pos);
+                write_ref(subsamples_start(run_of_j, pos));
+            }
         }
         pos = LF(pos, pattern_at(m-1));
+        --skip_queries;
 
         struct Triplet {
             size_t sa, ref, len;
         };
 
-        auto store_lce_info = [&] (const int i, const size_t textpos, const size_t run, lce_skip skip) {
-            lce_is_paused = true;
-            stored_it[lce_cnt] = i;
-            stored_sample_pos[lce_cnt] = textpos;
-            stored_ptr[lce_cnt] = last_ref;
-            stored_run[lce_cnt] = run;
-            direction[lce_cnt] = skip;
-            lce_cnt++;
-        };
+        // auto store_lce_info = [&] (const int i, const size_t textpos, const size_t run, lce_skip skip) {
+        //     lce_is_paused = true;
+        //     stored_it[lce_cnt] = i;
+        //     stored_sample_pos[lce_cnt] = textpos;
+        //     stored_ptr[lce_cnt] = last_ref;
+        //     stored_run[lce_cnt] = run;
+        //     direction[lce_cnt] = skip;
+        //     lce_cnt++;
+        // };
 
-        auto delay_preceding_lce = [&] (const size_t run, const size_t rank, char c, int i, lce_skip skip) -> Triplet {
-            const size_t sa0 = this->bwt.select(rank-1, c);
-            const ri::ulint run0 = this->bwt.run_of_position(sa0);
-            const size_t textpos = this->samples_last[run0];
-            //verbose("i = ", i, "last_ref = ", last_ref, " lce_is_paused =", lce_is_paused, "UP= ", textposLast);
-            store_lce_info(i, textpos, run, skip);
-            return {sa0, textpos, 0};
-        };
+        // auto delay_preceding_lce = [&] (const size_t run, const size_t rank, char c, int i, lce_skip skip) -> Triplet {
+        //     const size_t sa0 = this->bwt.select(rank-1, c);
+        //     const ri::ulint run0 = this->bwt.run_of_position(sa0);
+        //     const size_t textpos = this->samples_last[run0];
+        //     //verbose("i = ", i, "last_ref = ", last_ref, " lce_is_paused =", lce_is_paused, "UP= ", textposLast);
+        //     store_lce_info(i, textpos, run, skip);
+        //     return {sa0, textpos, 0};
+        // };
 
-        auto delay_succeeding_lce = [&] (const size_t sa, const size_t run, int i, lce_skip skip) -> Triplet {
-            const size_t textpos = this->samples_start[run];
-            //verbose("i = ", i, "last_ref = ", last_ref, " lce_is_paused =", lce_is_paused, "DOWN= ", textposStart, " run = ", this->bwt.run_of_position(sa1));
-            store_lce_info(i, textpos, run, skip);
-            return {sa, textpos, 0};
-        };
+        // auto delay_succeeding_lce = [&] (const size_t sa, const size_t run, int i, lce_skip skip) -> Triplet {
+        //     const size_t textpos = this->samples_start[run];
+        //     //verbose("i = ", i, "last_ref = ", last_ref, " lce_is_paused =", lce_is_paused, "DOWN= ", textposStart, " run = ", this->bwt.run_of_position(sa1));
+        //     store_lce_info(i, textpos, run, skip);
+        //     return {sa, textpos, 0};
+        // };
 
         auto compute_mlq = [&] (const size_t pos_sample, const size_t pos_pattern) -> size_t {
             //verbose("computing MLQ for:  ", pos_sample, " ", pos_pattern);
-            return ((pos_sample + 1) >= n) ? 0 : match_length_query(slp, pos_sample + 1, pos_pattern);
+            if (pos_sample + 1 >= n)
+                return 0;
+            else
+            {
+                #ifdef MEASURE_TIME
+                Stopwatch s;
+                #endif
+                const size_t lenLast = match_length_query(slp, pos_sample + 1, pos_pattern);
+                #ifdef MEASURE_TIME
+                time_mlq += s.seconds();
+                ++count_mlq_total;
+                #endif
+                return lenLast;
+            }
         };
 
         auto compute_lce = [&] (const size_t pos_sample, const size_t pos_ptr, const size_t max_len) -> size_t {
             //verbose("computing MLQ for:  ", pos_sample, " ", pos_pattern);
+            #ifdef MEASURE_TIME
+            Stopwatch s;
+            #endif
             auto lce =  ((pos_sample + 1) >= n) ? 0 : lceToRBounded(slp, pos_sample + 1, pos_ptr, max_len);
+            #ifdef MEASURE_TIME
+            time_lce += s.seconds();
+            ++count_lce_total;
+            #endif
             //verbose("computed LCE of:  ", lce, " ", max_len);
             return min(max_len, lce);
         };
 
-        auto empty_stack = [&] () {
-            // we only compute (lce_cnt - 1) LCEs as the last one already was computed  
-            for (int j = 0; j < (lce_cnt - 1); j++) {
-                if ( (direction[j] == forbidden) ||
-                    ((direction[j] == up) && !thr_lce.skip_preceding_lce(stored_run[j], last_len)) ||
-                    ((direction[j] == down) && !thr_lce.skip_succeeding_lce(stored_run[j], last_len))) {
-                  last_len = compute_lce(stored_sample_pos[j], stored_ptr[j], last_len);
-                }
-                write_len_segment(max(1, stored_it[j+1] - stored_it[j]));
-            }
-        };
+        // auto empty_stack = [&] () {
+        //     // we only compute (lce_cnt - 1) LCEs as the last one already was computed  
+        //     for (int j = 0; j < (lce_cnt - 1); j++) {
+        //         if ( (direction[j] == forbidden) ||
+        //             ((direction[j] == up) && !thr_lce.skip_preceding_lce(stored_run[j], last_len)) ||
+        //             ((direction[j] == down) && !thr_lce.skip_succeeding_lce(stored_run[j], last_len))) {
+        //           last_len = compute_lce(stored_sample_pos[j], stored_ptr[j], last_len);
+        //         }
+        //         write_len_segment(max(1, stored_it[j+1] - stored_it[j]));
+        //     }
+        // };
 
-        auto try_skip_lces = [&] (const size_t lces_to_skip) {
-            const size_t last_delay = lces_to_skip - 1;
-            const size_t skipped_steps = (stored_it[last_delay] - stored_it[0]);
-            const int new_r_bound = last_len + skipped_steps; // if we are processing the same MEM, this is its length
+        // auto try_skip_lces = [&] (const size_t lces_to_skip) {
+        //     const size_t last_delay = lces_to_skip - 1;
+        //     const size_t skipped_steps = (stored_it[last_delay] - stored_it[0]);
+        //     const int new_r_bound = last_len + skipped_steps; // if we are processing the same MEM, this is its length
 
-            const size_t lce = compute_mlq(stored_sample_pos[last_delay], m-stored_it[last_delay]);
+        //     const size_t lce = compute_mlq(stored_sample_pos[last_delay], m-stored_it[last_delay]);
 
-            lce_is_paused = false;
-            if (lce == new_r_bound) {
-                //verbose("first delayed unbounded lce: ", compute_lce(stored_sample_pos[0], m-stored_it[0], 1000));
-                //verbose("last  delayed unbounded lce: ", compute_lce(stored_sample_pos[last_delay], m-stored_it[last_delay], 1000));
-                //verbose("lce: ", lce, " last_len+skipped_steps: ", last_len + skipped_steps, " last_len", last_len, " skipped_steps: ", skipped_steps);
-                //verbose("stored_sample_pos:", stored_sample_pos[last_delay]);
-                // if we still process the same MEM, we know the lens right ahead
-                write_len_segment(skipped_steps+1);
-            } else {
-                empty_stack();
-                write_len(lce+1, lce_is_paused);
-            }
-            lce_cnt = 0;
-        };
+        //     lce_is_paused = false;
+        //     if (lce == new_r_bound) {
+        //         //verbose("first delayed unbounded lce: ", compute_lce(stored_sample_pos[0], m-stored_it[0], 1000));
+        //         //verbose("last  delayed unbounded lce: ", compute_lce(stored_sample_pos[last_delay], m-stored_it[last_delay], 1000));
+        //         //verbose("lce: ", lce, " last_len+skipped_steps: ", last_len + skipped_steps, " last_len", last_len, " skipped_steps: ", skipped_steps);
+        //         //verbose("stored_sample_pos:", stored_sample_pos[last_delay]);
+        //         // if we still process the same MEM, we know the lens right ahead
+        //         write_len_segment(skipped_steps+1);
+        //     } else {
+        //         empty_stack();
+        //         write_len(lce+1, lce_is_paused);
+        //     }
+        //     lce_cnt = 0;
+        // };
 
         for (size_t i = 1; i < m; ++i) {
             const auto c = pattern_at(m - i - 1);
             const size_t number_of_runs_of_c = this->bwt.number_of_letter(c);
 
             if (number_of_runs_of_c == 0) {
-                write_len(0, lce_is_paused);
-                write_ref(1); // why 1???
+                skip_queries = min_ms_len;
             } else if (pos < this->bwt.size() && this->bwt[pos] == c) {
-                write_len(last_len+1, lce_is_paused);
-                write_ref(last_ref-1);
+                if (!skip_queries) {
+                    write_len(last_len+1);
+                    write_ref(last_ref-1);
+                }
             } else { // we jump
                 const ri::ulint rank = this->bwt.rank(pos, c);
 
                 size_t sa0, sa1; // SA indices of the previous and next entries with BWT[i] = c
-                ri::ulint run1;
+                ri::ulint run1, run0;
 
                 if (rank > 0) {
                     sa0 = this->bwt.select(rank-1, c);
@@ -629,53 +672,120 @@ public:
 
                 const Triplet jump = [&] () -> Triplet {
                     if (rank == 0) {
-                        // Check only succeeding -> we ignore thresholds in this case
-                        return delay_succeeding_lce(sa1, run1, i, forbidden);
+                        if (skip_queries) {
+                            return {sa1, 0, 0};
+                        }
+                        else if (do_mlq) {
+                            const size_t textposStart = subsamples_start(run1, sa1);
+                            size_t match_len = compute_mlq(textposStart, m - i - 1);
+                            if (match_len >= min_ms_len) {
+                                do_mlq = false;
+                            }
+                            else {
+                                skip_queries = min_ms_len - match_len;
+                            }
+                            return {sa1, textposStart, match_len};
+                        }
+                        else {
+                            const size_t textposStart = subsamples_start(run1, sa1);
+                            return {sa1, textposStart, compute_lce(textposStart, last_ref, last_len)};
+                        }
                     } else if(rank >= number_of_runs_of_c) {
-                        // Check only preceding -> we ignore thresholds in this case
-                        return delay_preceding_lce(run1, rank, c, i, forbidden);
+                        const ri::ulint run0 = this->bwt.run_of_position(sa0);
+                        if (skip_queries) {
+                            return {sa0, 0, 0};
+                        }
+                        else if (do_mlq) {
+                            const size_t textposLast = subsamples_last(run0, sa0);
+                            size_t match_len = compute_mlq(textposLast, m - i - 1);
+                            if (match_len >= min_ms_len) {
+                                do_mlq = false;
+                            }
+                            else {
+                                skip_queries = min_ms_len - match_len;
+                            }
+                            return {sa0, textposLast, match_len};
+                        }
+                        else {
+                            const size_t textposLast = subsamples_start(run0, sa0);
+                            return {sa0, textposLast, compute_lce(textposLast, last_ref, last_len)};
+                        }
                     }
                     // Check thresholds and boundary LCEs first
                     const size_t thr = thresholds[run1];
                     if (pos < thr) {
-                        if (!lce_is_paused && thr_lce.skip_preceding_lce(run1, last_len)) {
+                        const ri::ulint run0 = this->bwt.run_of_position(sa0);
+                        if (!do_mlq && !skip_queries && thr_lce.skip_preceding_lce(run1, last_len)) {
                             const ri::ulint run0 = this->bwt.run_of_position(sa0);
-                            const size_t ref0 = this->samples_last[run0];
+                            const size_t ref0 = subsamples_last(run0, sa0);
                             const size_t len0 = last_len;
-                            //verbose("i = ", i, "last_ref = ", last_ref, "STORED UP for = ", ref0, " pos= ", pos, " thr= ", thr);
                             return {sa0, ref0, len0};
                         } else {
-                            return delay_preceding_lce(run1, rank, c, i, up);
+                            if (skip_queries) {
+                                return {sa0, 0, 0};
+                            }
+                            else if (do_mlq) {
+                                const size_t textposLast = subsamples_last(run0, sa0);
+                                size_t match_len = compute_mlq(textposLast, m - i - 1);
+                                if (match_len >= min_ms_len) {
+                                    do_mlq = false;
+                                }
+                                else {
+                                    skip_queries = min_ms_len - match_len;
+                                }
+                                return {sa0, textposLast, match_len};
+                            }
+                            else {
+                                const size_t textposLast = subsamples_start(run0, sa0);
+                                return {sa0, textposLast, compute_lce(textposLast, last_ref, last_len)};
+                            }
                         }
                     } else {
-                        if (!lce_is_paused && thr_lce.skip_succeeding_lce(run1, last_len)) {
-                            const size_t ref1 = this->samples_start[run1];
+                        if (!do_mlq && !skip_queries && thr_lce.skip_succeeding_lce(run1, last_len)) {
+                            const size_t ref1 = subsamples_start(run1, sa1);
                             const size_t len1 = last_len;
-                            //verbose("i = ", i, "last_ref = ", last_ref, "STORED DOWN for = ", ref1);
                             return {sa1, ref1, len1};
                         } else {
-                            return delay_succeeding_lce(sa1, run1, i, down);
+                            if (skip_queries) {
+                                return {sa1, 0, 0};
+                            }
+                            else if (do_mlq) {
+                                const size_t textposStart = subsamples_start(run1, sa1);
+                                size_t match_len = compute_mlq(textposStart, m - i - 1);
+                                if (match_len >= min_ms_len) {
+                                    do_mlq = false;
+                                }
+                                else {
+                                    skip_queries = min_ms_len - match_len;
+                                }
+                                return {sa1, textposStart, match_len};
+                            }
+                            else {
+                                const size_t textposStart = subsamples_start(run1, sa1);
+                                return {sa1, textposStart, compute_lce(textposStart, last_ref, last_len)};
+                            }
                         }
                     }
                 }();
 
-                if (lce_cnt == lce_freq) {
-                    try_skip_lces(lce_freq);
-                } else {
-                    write_len(1 + jump.len, lce_is_paused);
+                if (!skip_queries) {
+                    write_len(1 + jump.len);
+                    write_ref(jump.ref);
                 }
-                write_ref(jump.ref);
                 pos = jump.sa;
             }
             pos = LF(pos, c); //! Perform one backward step
-        }
-
-        if (lce_cnt > 0) {
-            //verbose("emptying stack of size ", lce_cnt);
-            try_skip_lces(lce_cnt); // do the remaining LCEs
-            write_len_segment(refs.size() - lens.size()); // write the tailing lengths that are missing
+            --skip_queries;
         }
         //verbose("lens_size = ", lens.size(), " refs.size = ", refs.size());
+        #ifdef MEASURE_TIME
+		cout << "Time backwardsearch: " << time_backwardstep << std::endl;
+		cout << "Time lce: " << time_lce << std::endl;
+        cout << "Time mlq: " << time_mlq << std::endl;
+        cout << "Count mlq: " << count_mlq_total << std::endl;
+		cout << "Count lce: " << count_lce_total << std::endl;
+		cout << "Count lce skips: " << count_lce_skips << std::endl;
+        #endif
         return std::make_pair(lens, refs);
     }
 
@@ -696,6 +806,126 @@ public:
         return l;
     }
 
+    /**
+    * @brief Access the subsampled version of samples_last for testing purposes
+    *
+    * @param run The run index used for accessing samples_last.
+    * @return ulint - The corresponding value of samples_last.
+    */
+    ulint subsamples_last(const ulint& run) {
+        return subsamples_last(run, this->bwt.run_range(run).second);
+    }
+
+    /**
+    * @brief Access the subsampled version of samples_last
+    *
+    * @param run The run index used for accessing samples_last.
+    * @param pos The last position in the BWT corresponding to the run of interest.
+    * @return ulint - The corresponding value of samples_last.
+    */
+    ulint subsamples_last(const ulint& run, const ulint& pos) {
+        DCHECK_EQ(pos, this->bwt.run_range(run).second);
+
+        ON_DEBUG(LF_pos = std::queue<ulint>());
+        LF_next = std::queue<ulint>();
+
+        // Check if the run is subsampled using subsampled_last_samples_bv
+        if (subsampled_last_samples_bv[run] == 1) {
+            return this->samples_last[subsampled_last_samples_bv.rank(run)];
+        }
+
+        auto n = this->bwt_size();
+
+        // Find the character at current_pos
+        auto c = this->bwt[pos];
+
+        ON_DEBUG(LF_pos.push(pos));
+
+        // Traverse the BWT to find a subsampled run
+        ulint current_pos = this->LF(pos, c);
+        ulint current_run = this->bwt.run_of_position(current_pos);
+        size_t k = 1;
+
+        LF_next.push(current_pos);
+
+        while (subsampled_last_samples_bv[current_run] == 0 ||
+            (current_pos != n - 1 && current_run == this->bwt.run_of_position(current_pos + 1))) { 
+            
+            ON_DEBUG(LF_pos.push(current_pos));
+
+            c = this->bwt[current_pos];
+            current_pos = this->LF(current_pos, c);
+            current_run = this->bwt.run_of_position(current_pos);
+            k++;
+
+            LF_next.push(current_pos);
+        }
+
+        assert(k < this->maxLF);
+
+        return this->samples_last[subsampled_last_samples_bv.rank(current_run)] + k;
+    }
+
+
+    /**
+    * @brief Access the subsampled version of samples_start for testing purposes
+    *
+    * @param run The run index used for accessing samples_start.
+    * @return ulint - The corresponding value of samples_start.
+    */
+    ulint subsamples_start(const ulint& run) {
+        return subsamples_start(run, this->bwt.run_range(run).first);
+    }
+
+
+    /**
+    * @brief Access the subsampled version of samples_start
+    *
+    * @param run The run index used for accessing samples_start.
+    * @param pos The first position in the BWT corresponding to the run of interest.
+    * @return ulint - The corresponding value of samples_start.
+    */
+    ulint subsamples_start(const ulint& run, const ulint& pos) {
+        DCHECK_EQ(pos, this->bwt.run_range(run).first);
+
+        ON_DEBUG(LF_pos = std::queue<ulint>());
+        LF_next = std::queue<ulint>();
+
+        // Check if the run is subsampled using subsampled_start_samples_bv
+        if (subsampled_start_samples_bv[run] == 1) {
+            return this->samples_start[subsampled_start_samples_bv.rank(run)];
+        }
+
+        // Find the character at current_pos
+        auto c = this->bwt[pos];
+
+        ON_DEBUG(LF_pos.push(pos));
+
+        // Traverse the BWT to find a subsampled run
+        ulint current_pos = this->LF(pos, c);
+        ulint current_run = this->bwt.run_of_position(current_pos);
+        size_t k = 1;
+
+        LF_next.push(current_pos);
+
+        while (subsampled_start_samples_bv[current_run] == 0 ||
+            (current_pos != 0 && current_run == this->bwt.run_of_position(current_pos - 1))) { 
+            
+            ON_DEBUG(LF_pos.push(current_pos));
+
+            c = this->bwt[current_pos];
+            current_pos = this->LF(current_pos, c);
+            current_run = this->bwt.run_of_position(current_pos);
+            k++;
+
+            LF_next.push(current_pos);
+        }
+
+        assert(k < this->maxLF);
+
+        return this->samples_start[subsampled_start_samples_bv.rank(current_run)] + k;
+    }
+
     /* serialize the structure to the ostream
      * \param out     the ostream
      */
@@ -710,10 +940,13 @@ public:
         written_bytes += this->bwt.serialize(out);
         written_bytes += this->samples_last.serialize(out);
 
+        written_bytes += subsampled_last_samples_bv.serialize(out);
+
         written_bytes += samples_start.serialize(out, child, "samples_start");
 
-        written_bytes += thresholds.serialize(out, child, "thresholds");
+        written_bytes += subsampled_start_samples_bv.serialize(out);
 
+        written_bytes += thresholds.serialize(out, child, "thresholds");
         written_bytes += thr_lce.serialize(out, child, "thr_lce");
 
         sdsl::structure_tree::add_size(child, written_bytes);
@@ -723,18 +956,20 @@ public:
     /* load the structure from the istream
      * \param in the istream
      */
-    void load(std::istream &in, const std::string& filename)
+    void load(std::istream &in, const std::string& filename, const size_t& _maxLF)
     {
         in.read((char *)&this->terminator_position, sizeof(this->terminator_position));
         my_load(this->F, in);
         this->bwt.load(in);
         this->r = this->bwt.number_of_runs();
         this->samples_last.load(in);
+        subsampled_last_samples_bv.load(in);
         this->samples_start.load(in);
+        subsampled_start_samples_bv.load(in);
 
         thresholds.load(in, &this->bwt);
         thr_lce.load(in, &this->bwt);
-
+        
         load_grammar(filename);
     }
 

@@ -338,6 +338,7 @@ struct Args
   bool rle   = false; // outpt RLBWT
   std::string patterns = ""; // path to patterns file
   bool is_fasta = false; // read a fasta file
+  size_t maxLF = 1; // sparseness of the suffix array
 };
 
 void parseArgs(int argc, char *const argv[], Args &arg)
@@ -358,10 +359,11 @@ void parseArgs(int argc, char *const argv[], Args &arg)
                     "  grammar: [string]  - options for the grammar.\n" +
                     "  thr_lce: [string]  - options for storing the thr_lce.\n" +
                     "    bytes: [integer] - how many bytes for storing the thr_lce.\n" +
+                    "  lfmax: [integer] - maximum allowed LF steps for suffix array access. (def. 1)\n"
                     "      csv: [boolean] - print the stats in csv form on strerr. (def. false)\n");
 
   std::string sarg;
-  while ((c = getopt(argc, argv, "w:smcfrhp:g:t:b:d:")) != -1)
+  while ((c = getopt(argc, argv, "w:smcfrhp:g:t:b:d:l:")) != -1)
   {
     switch (c)
     {
@@ -398,6 +400,16 @@ void parseArgs(int argc, char *const argv[], Args &arg)
       sarg.assign(optarg);
       arg.bytes = stoi(sarg);
       break;
+    case 'l':
+    {
+      sarg.assign(optarg);
+      int maxLF = stoi(sarg);
+      if (maxLF <= 0) {
+        error("Invalid value for maxLF\n", usage);
+      }
+      arg.maxLF = static_cast<size_t>(maxLF);
+      break;
+    }
     case 'f':
       arg.is_fasta = true;
       break;

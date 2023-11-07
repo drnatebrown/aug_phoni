@@ -25,6 +25,7 @@
 #define _MS_THR_LCE_DS_HH
 
 #include <common.hpp>
+#include <cmath>
 
 //#include <malloc_count.h>
 
@@ -111,8 +112,9 @@ public:
         max_bits=0;
     }
 
-    thr_lce_plain(std::string filename, rle_string_t* bwt_, int bit_width = 0):bwt(bwt_)
+    thr_lce_plain(std::string filename, rle_string_t* bwt_, int byte_width = 0):bwt(bwt_)
     {
+        int bit_width = 8*byte_width;
         int log_n = bitsize(uint64_t(bwt->size()));
         int vec_width = log_n;
         max_bits = 0;
@@ -121,7 +123,7 @@ public:
         {
             max_bits = bit_width;
             vec_width = max_bits;
-            max_size = max_bits^2 - 1;
+            max_size = pow(2, max_bits) - 1;
         }
 
         verbose("Reading threshold/boundary LCE values from file");
@@ -275,7 +277,7 @@ public:
     void load(std::istream &in, rle_string_t *bwt_)
     {
         in.read((char *)&max_bits, sizeof(max_bits));
-        max_size = (max_bits) ? max_bits^2 - 1 : 0;
+        max_size = (max_bits) ? pow(2, max_bits) - 1 : 0;
 
         before_thr_lce.load(in);
         after_thr_lce.load(in);

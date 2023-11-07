@@ -38,13 +38,13 @@
 
 template<class matchingstats> 
 void run(const Args& args) {
-  verbose("Deserializing the augmented PHONI index");
+  verbose("Deserializing the augmented PHONI index with MLQ");
   std::chrono::high_resolution_clock::time_point t_insert_start = std::chrono::high_resolution_clock::now();
 
   matchingstats ms;
   {
-    ifstream in(args.filename + ".aug");
-    ms.load(in, args.filename);
+    ifstream in(args.filename + to_string(args.maxLF) + ".aug.mlq");
+    ms.load(in, args.filename, args.maxLF);
   }
 
   std::chrono::high_resolution_clock::time_point t_insert_end = std::chrono::high_resolution_clock::now();
@@ -158,24 +158,12 @@ int main(int argc, char *const argv[]) {
 
   verbose("Memory peak: ", malloc_count_peak());
 
-  if((args.grammar == "naive" || args.grammar == "plain") && args.thr_lce == "plain") {
-    verbose("using naive grammar and default threshold lce");
-    run<ms_pointers<PlainSlp<var_t, Fblc, Fblc>> >(args);
-  } else if ((args.grammar == "naive" || args.grammar == "plain") && args.thr_lce == "compressed"){
-    verbose("using naive grammar and compressed threshold lce");
-    run<ms_pointers<PlainSlp<var_t, Fblc, Fblc>, ms_rle_string_sd, thr_lce_bv<>> >(args);
-  }
-  else if (args.thr_lce == "compressed") 
-  {
-    verbose("using default grammar and compressed threshold lce");
-    //run<ms_pointers<SelfShapedSlp<var_t, DagcSd, DagcSd, SelSd>, ms_rle_string_sd, thr_lce_bv<>> >(args);
-  }
-  else if((args.grammar == "naive" || args.grammar == "plain")) {
-    verbose("using naive grammar and default threshold lce");
-    run<ms_pointers<PlainSlp<var_t, Fblc, Fblc>> >(args);
+  if((args.grammar == "naive" || args.grammar == "plain")) {
+    verbose("using naive grammar");
+    run<ms_pointers<PlainSlp<var_t, Fblc, Fblc>>>(args);
   }
   else {
-    verbose("using default grammar and default threshold lce");
+    verbose("using default grammar");
     run<ms_pointers<> >(args);
   }
 
