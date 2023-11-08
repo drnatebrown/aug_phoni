@@ -138,9 +138,11 @@ public:
 
     int_vector<> samples_start;
     std::queue<ulint> LF_next;
+    ON_DEBUG(std::queue<ulint> LF_pos;)
     sparse_bv_type subsampled_start_samples_bv;
     sparse_bv_type subsampled_last_samples_bv;
 
+    size_t maxLF;
     typedef size_t size_type;
 
     ms_pointers()
@@ -520,31 +522,30 @@ public:
         size_t last_len;
         size_t last_ref;
 
-        size_t skip_queries = min_ms_len;
-        bool do_mlq = false;
+        size_t lcs_len = 1;
+        size_t skip_queries = 0;
 
         auto write_len = [&] (const size_t l) {
             last_len = l;
+            if (skip_queries) return;
             lens.push_back(last_len);
         };
         auto write_ref = [&] (const size_t p) {
             last_ref = p;
+            if (skip_queries) return;
             refs.push_back(last_ref);
         };
 
         //! Start with the last character
         auto pos = this->bwt.select(1, pattern_at(m-1));
         {
-            if (!skip_queries)
-            {
-                const ri::ulint run_of_j = this->bwt.run_of_position(pos);
-                write_len(1);
-                write_ref(subsamples_start(run_of_j, pos));
-            }
+            const ri::ulint run_of_j = this->bwt.run_of_position(pos);
+            auto possible_start_pos = this->bwt.select(0, pattern_at(m-1));
+            auto start_pos = this->bwt.run_of_position(possible_start_pos)==run_of_j ? possible_start_pos : pos;
+            write_ref(subsamples_start(run_of_j, start_pos));
         }
+        write_len(1);
         pos = LF(pos, pattern_at(m-1));
-        if (skip_queries == 1) do_mlq = true;
-        skip_queries = (min_ms_len == 0) ? 0 : min_ms_len - 1;
 
         struct Triplet {
             size_t sa, ref, len;
@@ -568,19 +569,19 @@ public:
             }
         };
 
-        auto compute_lce = [&] (const size_t pos_sample, const size_t pos_ptr, const size_t max_len) -> size_t {
-            //verbose("computing MLQ for:  ", pos_sample, " ", pos_pattern);
-            #ifdef MEASURE_TIME
-            Stopwatch s;
-            #endif
-            auto lce =  ((pos_sample + 1) >= n) ? 0 : lceToRBounded(slp, pos_sample + 1, pos_ptr, max_len);
-            #ifdef MEASURE_TIME
-            time_lce += s.seconds();
-            ++count_lce_total;
-            #endif
-            //verbose("computed LCE of:  ", lce, " ", max_len);
-            return min(max_len, lce);
-        };
+        // auto compute_lce = [&] (const size_t pos_sample, const size_t pos_ptr, const size_t max_len) -> size_t {
+        //     //verbose("computing MLQ for:  ", pos_sample, " ", pos_pattern);
+        //     #ifdef MEASURE_TIME
+        //     Stopwatch s;
+        //     #endif
+        //     auto lce =  ((pos_sample + 1) >= n) ? 0 : lceToRBounded(slp, pos_sample + 1, pos_ptr, max_len);
+        //     #ifdef MEASURE_TIME
+        //     time_lce += s.seconds();
+        //     ++count_lce_total;
+        //     #endif
+        //     //verbose("computed LCE of:  ", lce, " ", max_len);
+        //     return min(max_len, lce);
+        // };
 
         // auto empty_stack = [&] () {
         //     // we only compute (lce_cnt - 1) LCEs as the last one already was computed  
@@ -615,22 +616,33 @@ public:
         //     }
         //     lce_cnt = 0;
         // };
+        // cout << skip_queries << "\t" << lcs_len << std::endl;
 
+        bool force_mlq = false;
         for (size_t i = 1; i < m; ++i) {
             const auto c = pattern_at(m - i - 1);
             const size_t number_of_runs_of_c = this->bwt.number_of_letter(c);
 
             if (number_of_runs_of_c == 0) {
-                skip_queries = min_ms_len;
-                if (!skip_queries) {
-                    write_len(0);
-                    write_ref(1);
-                }
+                skip_queries = lcs_len;
+                write_len(0);
+                write_ref(1);
             } else if (pos < this->bwt.size() && this->bwt[pos] == c) {
-                if (!skip_queries) {
-                    write_len(last_len+1);
-                    write_ref(last_ref-1);
+                if (force_mlq) {
+                    last_len = compute_mlq(last_ref - 1, m - i);
                 }
+                if (!skip_queries) {
+                    if (last_len + 1 >= lcs_len) {
+                        lcs_len = last_len + 1;
+                        skip_queries = 0;
+                    }
+                    else {
+                        skip_queries = lcs_len - (last_len + 1);
+                    }
+                }
+
+                write_len(last_len+1);
+                write_ref(last_ref-1);
             } else { // we jump
                 const ri::ulint rank = this->bwt.rank(pos, c);
 
@@ -647,107 +659,76 @@ public:
 
                 run1 = this->bwt.run_of_position(sa1);
 
+                auto preceding_mlq = [&] () -> Triplet {
+                    const ri::ulint run0 = this->bwt.run_of_position(sa0);
+                    const size_t textposLast = subsamples_last(run0, sa0);
+                    if (skip_queries) {
+                        return {sa0, textposLast, 0};
+                    }
+                    else {
+                        size_t match_len = compute_mlq(textposLast, m - i);
+                        return {sa0, textposLast, match_len};
+                    }
+                };
+
+                auto succeeding_mlq = [&] () -> Triplet {
+                    const size_t textposStart = subsamples_start(run1, sa1);
+                    if (skip_queries) {
+                        return {sa1, textposStart, 0};
+                    }
+                    else {
+                        size_t match_len = compute_mlq(textposStart, m - i);
+                        return {sa1, textposStart, match_len};
+                    }
+                };
+
                 const Triplet jump = [&] () -> Triplet {
                     if (rank == 0) {
-                        if (skip_queries) {
-                            return {sa1, 0, 0};
-                        }
-                        else {
-                            const size_t textposStart = subsamples_start(run1, sa1);
-                            size_t match_len = (do_mlq) ? compute_mlq(textposStart, m - i - 1) : compute_lce(textposStart, last_ref, last_len);
-                            if (match_len >= min_ms_len) {
-                                do_mlq = false;
-                            }
-                            else {
-                                do_mlq = false;
-                                skip_queries = min_ms_len - match_len;
-                            }
-                            return {sa1, textposStart, match_len};
-                        }
+                        return succeeding_mlq();
                     } else if(rank >= number_of_runs_of_c) {
-                        const ri::ulint run0 = this->bwt.run_of_position(sa0);
-                        if (skip_queries) {
-                            return {sa0, 0, 0};
-                        }
-                        else {
-                            const size_t textposLast = subsamples_last(run0, sa0);
-                            size_t match_len = (do_mlq) ? compute_mlq(textposLast, m - i - 1) : compute_lce(textposLast, last_ref, last_len);
-                            if (match_len >= min_ms_len) {
-                                do_mlq = false;
-                            }
-                            else {
-                                do_mlq = false;
-                                skip_queries = min_ms_len - match_len;
-                            }
-                            return {sa0, textposLast, match_len};
-                        }
+                        return preceding_mlq();
                     }
                     // Check thresholds and boundary LCEs first
                     const size_t thr = thresholds[run1];
                     if (pos < thr) {
                         const ri::ulint run0 = this->bwt.run_of_position(sa0);
-                        if (!do_mlq && !skip_queries && thr_lce.skip_preceding_lce(run1, last_len)) {
+                        if (!skip_queries && !force_mlq && thr_lce.skip_preceding_lce(run1, last_len)) {
                             const ri::ulint run0 = this->bwt.run_of_position(sa0);
                             const size_t ref0 = subsamples_last(run0, sa0);
                             const size_t len0 = last_len;
                             return {sa0, ref0, len0};
                         } else {
-                            if (skip_queries) {
-                                return {sa0, 0, 0};
-                            }
-                            else {
-                                const size_t textposLast = subsamples_last(run0, sa0);
-                                size_t match_len = (do_mlq) ? compute_mlq(textposLast, m - i - 1) : compute_lce(textposLast, last_ref, last_len);
-                                if (match_len >= min_ms_len) {
-                                    do_mlq = false;
-                                }
-                                else {
-                                    do_mlq = false;
-                                    skip_queries = min_ms_len - match_len;
-                                }
-                                return {sa0, textposLast, match_len};
-                            }
+                            return preceding_mlq();
                         }
                     } else {
-                        if (!do_mlq && !skip_queries && thr_lce.skip_succeeding_lce(run1, last_len)) {
+                        if (!skip_queries && !force_mlq && thr_lce.skip_succeeding_lce(run1, last_len)) {
                             const size_t ref1 = subsamples_start(run1, sa1);
                             const size_t len1 = last_len;
                             return {sa1, ref1, len1};
                         } else {
-                            if (skip_queries) {
-                                return {sa1, 0, 0};
-                            }
-                            else {
-                                const size_t textposStart = subsamples_start(run1, sa1);
-                                size_t match_len = (do_mlq) ? compute_mlq(textposStart, m - i - 1) : compute_lce(textposStart, last_ref, last_len);
-                                if (match_len >= min_ms_len) {
-                                    do_mlq = false;
-                                }
-                                else {
-                                    do_mlq = false;
-                                    skip_queries = min_ms_len - match_len;
-                                }
-                                return {sa1, textposStart, match_len};
-                            }
+                            return succeeding_mlq();
                         }
                     }
                 }();
-
-                if (!skip_queries) {
-                    write_len(1 + jump.len);
-                    write_ref(jump.ref);
+                if (!skip_queries)
+                {
+                    if (jump.len + 1 >= lcs_len) {
+                        lcs_len = jump.len + 1;
+                        skip_queries = 0;
+                    }
+                    else {
+                        skip_queries = (lcs_len - (jump.len + 1));
+                    }
                 }
+
+                write_len(1 + jump.len);
+                write_ref(jump.ref);
                 pos = jump.sa;
             }
             pos = LF(pos, c); //! Perform one backward step
-            if (skip_queries == 1) {
-                do_mlq = true;
-                skip_queries = 0;
-            }
-            else if (skip_queries > 1)
-            {
-                --skip_queries;
-            }
+            force_mlq = (skip_queries == 1);
+            skip_queries = (skip_queries == 0) ? 0 : skip_queries - 1;
+            // cout << skip_queries << "\t" << lcs_len << "\t" << last_len << std::endl;
         }
         //verbose("lens_size = ", lens.size(), " refs.size = ", refs.size());
         #ifdef MEASURE_TIME
@@ -930,6 +911,7 @@ public:
      */
     void load(std::istream &in, const std::string& filename, const size_t& _maxLF)
     {
+        this->maxLF = _maxLF;
         in.read((char *)&this->terminator_position, sizeof(this->terminator_position));
         my_load(this->F, in);
         this->bwt.load(in);
