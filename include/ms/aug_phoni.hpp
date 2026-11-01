@@ -367,6 +367,7 @@ public:
 
 				if(rank < number_of_runs_of_c) {
 					sa1 = this->bwt.select(rank, c);
+					run1 = this->bwt.run_of_position(sa1);
 					DCHECK_GT(sa1, pos);
 				}
 
@@ -440,7 +441,6 @@ public:
 					// {
                         // INSERT CHECK HERE
                         // Check thresholds and boundary LCEs first
-                        run1 = this->bwt.run_of_position(sa1);
                         const size_t thr = thresholds[run1];
                         if (pos < thr) // check preceding thr_lce or compute new preceding LCE
                         {
@@ -684,6 +684,7 @@ public:
 
 				if(rank < number_of_runs_of_c) {
 					sa1 = this->bwt.select(rank, c);
+					run1 = this->bwt.run_of_position(sa1);
 					DCHECK_GT(sa1, pos);
 				}
 				
@@ -757,7 +758,6 @@ public:
 					// {
                         // INSERT CHECK HERE
                         // Check thresholds and boundary LCEs first
-                        run1 = this->bwt.run_of_position(sa1);
                         const size_t thr = thresholds[run1];
                         if (pos < thr) // check preceding thr_lce or compute new preceding LCE
                         {
