@@ -317,7 +317,7 @@ public:
         DCHECK_GT(this->bwt.number_of_letter(pattern_at(m-1)), 0);
 
         //! Start with the last character
-        auto pos = this->bwt.select(1, pattern_at(m-1));
+        auto pos = this->bwt.select(0, pattern_at(m-1));
         {
             const ri::ulint run_of_j = this->bwt.run_of_position(pos);
             ON_DEBUG(ms_references[m-1] = samples_start[run_of_j]);
@@ -367,6 +367,7 @@ public:
 
 				if(rank < number_of_runs_of_c) {
 					sa1 = this->bwt.select(rank, c);
+					run1 = this->bwt.run_of_position(sa1);
 					DCHECK_GT(sa1, pos);
 				}
 
@@ -440,7 +441,6 @@ public:
 					// {
                         // INSERT CHECK HERE
                         // Check thresholds and boundary LCEs first
-                        run1 = this->bwt.run_of_position(sa1);
                         const size_t thr = thresholds[run1];
                         if (pos < thr) // check preceding thr_lce or compute new preceding LCE
                         {
@@ -633,7 +633,7 @@ public:
         DCHECK_GT(this->bwt.number_of_letter(pattern_at(m-1)), 0);
 
         //! Start with the last character
-        auto pos = this->bwt.select(1, pattern_at(m-1));
+        auto pos = this->bwt.select(0, pattern_at(m-1));
         {
             const ri::ulint run_of_j = this->bwt.run_of_position(pos);
             ON_DEBUG(ms_references[m-1] = samples_start[run_of_j]);
@@ -684,6 +684,7 @@ public:
 
 				if(rank < number_of_runs_of_c) {
 					sa1 = this->bwt.select(rank, c);
+					run1 = this->bwt.run_of_position(sa1);
 					DCHECK_GT(sa1, pos);
 				}
 				
@@ -757,7 +758,6 @@ public:
 					// {
                         // INSERT CHECK HERE
                         // Check thresholds and boundary LCEs first
-                        run1 = this->bwt.run_of_position(sa1);
                         const size_t thr = thresholds[run1];
                         if (pos < thr) // check preceding thr_lce or compute new preceding LCE
                         {
